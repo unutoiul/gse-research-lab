@@ -4,6 +4,8 @@
         fetch or update OANDA XAU_USD candles and data/manifest.json
     python -m gse_research quality
         per-year data quality report, written to results/data_quality/
+    python -m gse_research r001 --period train|validate|test [--allow-test]
+        R001 (Require Sweep off vs on), written to results/R001/<period>/
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import json
 
 import pandas as pd
 
-from . import data, quality
+from . import data, experiments, quality
 
 
 def main() -> None:
@@ -23,6 +25,9 @@ def main() -> None:
     dl.add_argument("--granularity", choices=sorted(data.STEP), default="M15")
     dl.add_argument("--from", dest="start", default=data.FIRST_AVAILABLE)
     sub.add_parser("quality", help="per-year M15 data quality report")
+    r1 = sub.add_parser("r001", help="run R001 on one period")
+    r1.add_argument("--period", choices=["train", "validate", "test"], required=True)
+    r1.add_argument("--allow-test", action="store_true", help="open the locked test period (owner approval)")
     args = parser.parse_args()
 
     if args.command == "download":

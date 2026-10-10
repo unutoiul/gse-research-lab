@@ -1,0 +1,15 @@
+{
+  "experiment": "R001",
+  "dataset": "XAU_USD_M15.parquet",
+  "warmup_start": "2015-10-01",
+  "periods": {
+    "train": ["2016-01-01", "2019-01-01"],
+    "validate": ["2019-01-01", "2023-01-01"],
+    "test": ["2023-01-01", null]
+  },
+  "slippage": [0.0, 0.10, 0.30],
+  "headline_slippage": 0.10,
+  "min_trades_per_arm": 100,
+  "bootstrap": {"resamples": 2000, "level": 0.90, "seed": 7},
+  "notes": "headline_slippage fixed 2026-10-10 before any validation result was seen (BACKTEST.md's 10-tick placeholder)."
+}
