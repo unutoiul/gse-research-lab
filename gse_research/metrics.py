@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 
-COLUMNS = ["entry_time", "R", "mfe_R", "mae_R", "planned_rr", "bars_held", "reason"]
+COLUMNS = ["entry_time", "R", "mfe_R", "mae_R", "planned_rr", "bars_held", "reason", "spread_R"]
 
 
 def closed(trades: pd.DataFrame) -> pd.DataFrame:
@@ -42,6 +42,8 @@ def summarize(trades: pd.DataFrame, weeks: float | None = None) -> dict:
         "avg_mfe_R": float(t["mfe_R"].mean()) if len(t) else np.nan,
         "avg_mae_R": float(t["mae_R"].mean()) if len(t) else np.nan,
         "median_planned_rr": float(t["planned_rr"].median()) if len(t) else np.nan,
+        # One spread (buy at the ask, sell at the bid), in R: the cost every trade pays before slippage.
+        "avg_spread_R": float(t["spread_R"].mean()) if len(t) and "spread_R" in t else np.nan,
         "avg_bars_held": float(t["bars_held"].mean()) if len(t) else np.nan,
     }
     if weeks:

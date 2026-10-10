@@ -58,7 +58,8 @@ def simulate(m15: pd.DataFrame, candidates: pd.DataFrame, ex: Execution = Execut
         entry = ao[e] + ex.slippage if d == 1 else bo[e] - ex.slippage
         risk = d * (entry - stop)
         rec.update(entry_time=times.iat[e], entry=entry, stop=stop, target=target, risk=risk,
-                   gap_hours=(times.iat[e] - times.iat[i]).total_seconds() / 3600 - 0.25)
+                   gap_hours=(times.iat[e] - times.iat[i]).total_seconds() / 3600 - 0.25,
+                   spread_R=(ao[e] - bo[e]) / risk if risk > 0 else np.nan)
         if risk <= 0 or d * (target - entry) <= 0:
             out.append({**rec, "reason": "invalid_geometry"})
             continue

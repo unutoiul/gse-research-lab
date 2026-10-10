@@ -125,7 +125,7 @@ def _md(frame: pd.DataFrame) -> str:
 
 def _report(study, prov, results, boot, c0, v1, extra, funnels, head) -> str:
     keys = ["trades", "trades_per_week", "win_rate", "avg_win_R", "avg_loss_R", "expectancy_R", "profit_factor",
-            "max_drawdown_R", "avg_mfe_R", "avg_mae_R", "median_planned_rr"]
+            "max_drawdown_R", "avg_mfe_R", "avg_mae_R", "median_planned_rr", "avg_spread_R"]
     table = pd.DataFrame({k: {m: results[k].get(m, np.nan) for m in keys} for k in results}).T
     table.index.name = "arm@slippage"
     k = c0[c0["bos_had_sweep"] == True]  # noqa: E712
@@ -137,7 +137,9 @@ def _report(study, prov, results, boot, c0, v1, extra, funnels, head) -> str:
     verdict = ("**Inconclusive:** an arm has fewer than "
                f"{min_n} trades (C0 {n_c0}, V1 {n_v1}), so the decision rule cannot be applied."
                if min(n_c0, n_v1) < min_n else "Both arms have enough trades for the decision rule (applied on validation only).")
-    fun = pd.concat({a: f.set_index(["side", "stage"])[["rejected", "share_of_candles"]] for a, f in funnels.items()}, axis=1)
+    fun = pd.concat([f.set_index(["side", "stage"])[["rejected", "share_of_candles"]]
+                     .rename(columns={"rejected": f"{a} rejected", "share_of_candles": f"{a} share"}) for a, f in funnels.items()], axis=1)
+    fun.index = [f"{side} · {stage}" for side, stage in fun.index]
     parts = [
         f"# R001 — {prov['period']} period ({prov['range'][0][:10]} to {prov['range'][1][:10]})",
         "", f"> {prov['status']}", "",
@@ -149,6 +151,7 @@ def _report(study, prov, results, boot, c0, v1, extra, funnels, head) -> str:
         "", "## Results by arm and slippage", "",
         f"Headline slippage {head:.2f} (fixed before validation). Expectancy and drawdown in R after spread and slippage.",
         "", _md(table), "",
+        "Exit reasons (C0, headline slippage): " + ", ".join(f"{k} {v}" for k, v in metrics.closed(c0)["reason"].value_counts().items()) + ".", "",
         f"**V1 − C0 expectancy (slippage {head:.2f}):** {_fmt(boot['diff'])} R, {int(study['bootstrap']['level']*100)}% weekly bootstrap interval "
         f"[{_fmt(boot['low'])}, {_fmt(boot['high'])}].", "", verdict, "",
         "## What V1 changes inside C0", "",

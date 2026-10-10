@@ -1,0 +1,222 @@
+{
+  "provenance": {
+    "experiment": "R001",
+    "period": "train",
+    "range": [
+      "2016-01-01 00:00:00+00:00",
+      "2019-01-01 00:00:00+00:00"
+    ],
+    "weeks": 156.6,
+    "git": {
+      "commit": "03825be233421d96a60076f383876c37cdf695da",
+      "dirty": false
+    },
+    "dataset": {
+      "file": "XAU_USD_M15.parquet",
+      "sha256": "a637520850ecc80034524342317282a80b55683d7816e408102c275ef1eb9897"
+    },
+    "configs": {
+      "study.json": "f43f3cbe57891157da0fc28e3f63b5ee3bacfd9b6a77824d3918126dfe74e309",
+      "C0.json": "de3503dadde8a159fc0b2fad760d1949b507a5e01a468ecddc2cde7915236586",
+      "V1.json": "09aaf9e0f4d9613e9f6e578ff9a5bcb530e2076effc0d5b870ef4c16d60260fd"
+    },
+    "structure": {
+      "core": {
+        "swing_len": 10,
+        "zone_count": 8,
+        "flip_on": true,
+        "flip_wick": 35.0,
+        "cluster_on": false,
+        "cluster_atr": 0.5,
+        "flip_max_age": 20,
+        "eq_atr": 0.15,
+        "sweep_snr_atr": 3.0,
+        "break_fallback": true,
+        "tick": 0.01,
+        "pivot_ties": "strict"
+      },
+      "context": {
+        "space_mult": 2.0,
+        "confl_window": 15,
+        "sweep_bos_win": 6,
+        "conf_cluster": 8,
+        "rej_atr": 2.0,
+        "require_sweep": false,
+        "w_str": 35,
+        "w_loc": 30,
+        "w_conf": 25,
+        "w_time": 10,
+        "gate_cap": 60
+      }
+    },
+    "status": "PROVISIONAL. The Stage 4 parity gate has not passed: TradingView's pivot tie rule is unverified (`strict` assumed) and the data is OANDA, not the BlackBull feed GSE runs on."
+  },
+  "results": {
+    "C0@0.00": {
+      "trades": 309,
+      "win_rate": 0.27184466019417475,
+      "avg_win_R": 1.5481689938570005,
+      "avg_loss_R": -0.9580043832256635,
+      "expectancy_R": -0.2767145331449393,
+      "total_R": -85.50479074178625,
+      "profit_factor": 0.60331988157908,
+      "max_drawdown_R": 103.10994590739571,
+      "avg_mfe_R": 0.9987469894009897,
+      "avg_mae_R": 0.874744168996244,
+      "median_planned_rr": 3.116094986808271,
+      "avg_bars_held": 7.106796116504855,
+      "trades_per_week": 1.9735401459854014,
+      "trades_per_month": 8.552007299270073,
+      "exit_stop": 208,
+      "exit_time": 69,
+      "exit_target": 31,
+      "exit_stop_and_target": 1
+    },
+    "C0@0.10": {
+      "trades": 309,
+      "win_rate": 0.2686084142394822,
+      "avg_win_R": 1.3719665119252338,
+      "avg_loss_R": -1.0213018284310587,
+      "expectancy_R": -0.3784498146783976,
+      "total_R": -116.94099273562486,
+      "profit_factor": 0.49335445550999407,
+      "max_drawdown_R": 131.27604891938162,
+      "avg_mfe_R": 0.8828982565078827,
+      "avg_mae_R": 0.9228679437027161,
+      "median_planned_rr": 2.74124433456954,
+      "avg_bars_held": 7.106796116504855,
+      "trades_per_week": 1.9735401459854014,
+      "trades_per_month": 8.552007299270073,
+      "exit_stop": 208,
+      "exit_time": 69,
+      "exit_target": 31,
+      "exit_stop_and_target": 1
+    },
+    "C0@0.30": {
+      "trades": 309,
+      "win_rate": 0.24271844660194175,
+      "avg_win_R": 1.1792982014755118,
+      "avg_loss_R": -1.0955531457881977,
+      "expectancy_R": -0.5434047605300157,
+      "total_R": -167.91207100377486,
+      "profit_factor": 0.3450131052370574,
+      "max_drawdown_R": 176.86748288935198,
+      "avg_mfe_R": 0.7052527571320716,
+      "avg_mae_R": 0.9833300452019273,
+      "median_planned_rr": 2.3239875389409597,
+      "avg_bars_held": 7.106796116504855,
+      "trades_per_week": 1.9735401459854014,
+      "trades_per_month": 8.552007299270073,
+      "exit_stop": 208,
+      "exit_time": 69,
+      "exit_target": 31,
+      "exit_stop_and_target": 1
+    },
+    "V1@0.00": {
+      "trades": 2,
+      "win_rate": 0.0,
+      "avg_win_R": NaN,
+      "avg_loss_R": -1.0,
+      "expectancy_R": -1.0,
+      "total_R": -2.0,
+      "profit_factor": 0.0,
+      "max_drawdown_R": 2.0,
+      "avg_mfe_R": 0.6424794359576675,
+      "avg_mae_R": 1.0,
+      "median_planned_rr": 7.250382335660587,
+      "avg_bars_held": 8.5,
+      "trades_per_week": 0.012773722627737225,
+      "trades_per_month": 0.055352798053527975,
+      "exit_stop": 2
+    },
+    "V1@0.10": {
+      "trades": 2,
+      "win_rate": 0.0,
+      "avg_win_R": NaN,
+      "avg_loss_R": -1.0698344899232226,
+      "expectancy_R": -1.0698344899232226,
+      "total_R": -2.139668979846445,
+      "profit_factor": 0.0,
+      "max_drawdown_R": 2.139668979846445,
+      "avg_mfe_R": 0.5790788013318803,
+      "avg_mae_R": 1.0698344899232226,
+      "median_planned_rr": 6.681027814213742,
+      "avg_bars_held": 8.5,
+      "trades_per_week": 0.012773722627737225,
+      "trades_per_month": 0.055352798053527975,
+      "exit_stop": 2
+    },
+    "V1@0.30": {
+      "trades": 2,
+      "win_rate": 0.0,
+      "avg_win_R": NaN,
+      "avg_loss_R": -1.1829942391901849,
+      "expectancy_R": -1.1829942391901849,
+      "total_R": -2.3659884783803697,
+      "profit_factor": 0.0,
+      "max_drawdown_R": 2.3659884783803697,
+      "avg_mfe_R": 0.47127872127871834,
+      "avg_mae_R": 1.1829942391901849,
+      "median_planned_rr": 5.75634164106812,
+      "avg_bars_held": 8.5,
+      "trades_per_week": 0.012773722627737225,
+      "trades_per_month": 0.055352798053527975,
+      "exit_stop": 2
+    }
+  },
+  "bootstrap_V1_minus_C0": {
+    "diff": -0.6913846752448249,
+    "low": -0.8302553297858976,
+    "high": -0.556564745197652,
+    "resamples": 1738
+  },
+  "C0_split_by_paired_sweep": {
+    "K_kept_by_V1": {
+      "trades": 2,
+      "win_rate": 0.0,
+      "avg_win_R": NaN,
+      "avg_loss_R": -1.0698344899232226,
+      "expectancy_R": -1.0698344899232226,
+      "total_R": -2.139668979846445,
+      "profit_factor": 0.0,
+      "max_drawdown_R": 2.139668979846445,
+      "avg_mfe_R": 0.5790788013318803,
+      "avg_mae_R": 1.0698344899232226,
+      "median_planned_rr": 6.681027814213742,
+      "avg_bars_held": 8.5,
+      "exit_stop": 2
+    },
+    "R_removed_by_V1": {
+      "trades": 307,
+      "win_rate": 0.2703583061889251,
+      "avg_win_R": 1.3719665119252338,
+      "avg_loss_R": -1.0208685010963072,
+      "expectancy_R": -0.3739456799862489,
+      "total_R": -114.80132375577841,
+      "profit_factor": 0.49797068959064517,
+      "max_drawdown_R": 129.13637993953517,
+      "avg_mfe_R": 0.8848775363461627,
+      "avg_mae_R": 0.9219105069195207,
+      "median_planned_rr": 2.7196467991170863,
+      "avg_bars_held": 7.09771986970684,
+      "exit_stop": 206,
+      "exit_time": 69,
+      "exit_target": 31,
+      "exit_stop_and_target": 1
+    }
+  },
+  "E_V1_only": {
+    "trades": 0,
+    "win_rate": NaN,
+    "avg_win_R": NaN,
+    "avg_loss_R": NaN,
+    "expectancy_R": NaN,
+    "total_R": 0.0,
+    "profit_factor": NaN,
+    "max_drawdown_R": 0.0,
+    "avg_mfe_R": NaN,
+    "avg_mae_R": NaN,
+    "median_planned_rr": NaN,
+    "avg_bars_held": NaN
+  }
+}
