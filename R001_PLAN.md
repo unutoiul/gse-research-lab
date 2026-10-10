@@ -92,6 +92,10 @@ Each stage ends with tests run, a leakage check, saved results, and a short repo
 
    *Done 2026-10-10:* 492,067 candles; 26 tests (synthetic sessions, both DST changes, no-look-ahead joins, truncation invariance, cache invariants); first usable year 2016.
 3. **`structure.py`:** a port of `core.pine`, `context.pine` and `f_bias_score`, keeping the audit's order of operations (1.1) and porting hazards P2–P6. On every candle, record **every** failing Golden Zone condition and the first one, in audit 4.1 order.
+
+   *Done 2026-10-10:* the port matches GSE's own Pine source, translated by the repo's Pine-to-JS harness (`tests/oracle/pine_oracle.mjs`), on every candle of three windows (≈ 34k candles, Require Sweep off and on): levels, pools, sweeps, breaks, room, Golden Zone, score and storyline. Truncation and higher-timeframe tests show no look-ahead. **Still open for the parity gate:** TradingView's pivot tie rule (default `strict`, provisional) and feed differences.
+
+   **Finding that affects this plan:** 2016–2026 has 1,085 C0 Golden Zone episodes, but only **17** have a BOS with a paired qualified sweep. Only 48 of 3,349 BOS events are paired. V1 therefore has ~17 candidates in 10.8 years, below the 100-trade minimum, so V1 versus C0 is **inconclusive by design**. See "Open issue" below.
 4. **Parity gate, before any experiment:**
    - Settle the pivot tie rule (audit P1) against stored TradingView snapshots.
    - Check that the level lifecycle is identical to the real Pine functions, translated by the repo's harness with defect B10 corrected, on identical candles.
@@ -102,6 +106,13 @@ Each stage ends with tests run, a leakage check, saved results, and a short repo
    - A pivot is used only from its confirmation candle.
 6. **`signals.py`, `backtest.py` (RXM-1), `metrics.py`, `experiments.py`:** versioned R001 config files for C0 and V1 in `config/`. Each result records the config hash, the dataset hash and the git commit.
 7. **Run R001** on train and validation, then write `results/R001/report.md`, the trade logs and the rejection funnel. **Stop and ask** before opening the test period.
+
+## Open issue: V1 is too rare to test (found at stage 3)
+
+GSE's *Require Sweep* pairs the sweep with the BOS: a qualified sweep in the 6 bars before the BOS (`context:129-137`). It almost never happens. A 10-bar swing BOS rarely follows a sweep that closely. Options, for the owner to choose before stage 7:
+1. **Keep R001 as designed.** It will report V1 as inconclusive (17 setups), which is itself the answer to "is the switch usable": it removes about 98% of setups.
+2. **Add V2, the website's sweep rule:** a qualified sweep within 8 bars of the *candidate* candle, not of the BOS (`gseSetups.ts:436-437`). It is an existing v4.0 rule, applied to the Golden Zone. Proposed.
+3. Treat the sweep as a recorded feature and compare outcomes with and without it inside C0 (descriptive, no new rule).
 
 ## Out of scope for R001
 
