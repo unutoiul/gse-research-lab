@@ -30,7 +30,9 @@ def _sha(path: Path) -> str:
 def _git() -> dict:
     def run(*args: str) -> str:
         return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    return {"commit": run("rev-parse", "HEAD"), "dirty": bool(run("status", "--porcelain", "--untracked-files=no"))}
+    # Code and config changes make a run dirty; the results being written do not.
+    return {"commit": run("rev-parse", "HEAD"),
+            "dirty": bool(run("status", "--porcelain", "--untracked-files=no", "--", ".", ":!results"))}
 
 
 def _params(cls, overrides: dict):
