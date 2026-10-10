@@ -1,0 +1,9 @@
+[project]
+name = "gse-research"
+version = "0.1.0"
+description = "Reproducible research and backtesting for Gold Structure Engine (GSE) v4.0 on XAU/USD"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -106,7 +106,7 @@ def update(start: str = FIRST_AVAILABLE) -> pd.DataFrame:
 def load_m15(start: str | None = None, end: str | None = None) -> pd.DataFrame:
     """Cached M15 candles: time (open, UTC), close_time, OHLC, volume, spread."""
     if not M15_FILE.exists():
-        raise SystemExit("No candle cache yet. Run: python -m gse_lab download")
+        raise SystemExit("No candle cache yet. Run: python -m gse_research download")
     df = pd.read_parquet(M15_FILE)
     if start:
         df = df[df["time"] >= pd.Timestamp(start, tz="UTC")]

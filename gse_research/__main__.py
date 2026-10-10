@@ -1,7 +1,7 @@
 """GSE research lab command line.
 
-    python -m gse_lab download [--from 2006-01-01]   fetch or update OANDA candles
-    python -m gse_lab quality                         per-year data quality report
+    python -m gse_research download [--from 2006-01-01]   fetch or update OANDA candles
+    python -m gse_research quality                         per-year data quality report
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from . import data, quality
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="gse_lab")
+    parser = argparse.ArgumentParser(prog="gse_research")
     sub = parser.add_subparsers(dest="command", required=True)
     dl = sub.add_parser("download", help="fetch or update OANDA XAU_USD M15 candles")
     dl.add_argument("--from", dest="start", default=data.FIRST_AVAILABLE)

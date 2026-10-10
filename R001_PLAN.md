@@ -80,7 +80,7 @@ Otherwise the recommendation is to **keep the current rule** (sweep optional). I
 Each stage ends with tests run, a leakage check, saved results, and a short report of the files changed and the commands used.
 
 0. **Initial commit** of `gse-research` (audit, plan, draft). Every result has to record a git commit, and the repository has none yet.
-1. **Layout:** rename the draft package `gse_lab` to `gse_research`, and add `config/`, `results/` and `tests/` as in the brief.
+1. **Layout:** rename the draft package `gse_lab` (2026-10-10 draft) to `gse_research`, and add `config/`, `results/` and `tests/` as in the brief.
 2. **Data:** extend the downloader to keep bid and ask OHLC, then download (the OANDA practice token is already in `.env`). Write Parquet and run the per-year quality report. Tests:
    - no duplicate candles, and monotonic time;
    - the 3-hour last 4H candle, the daily 17:00–18:00 New York break, and DST weeks;

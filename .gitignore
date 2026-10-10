@@ -2,5 +2,8 @@
 __pycache__/
 .pytest_cache/
 .env
-data/
 out/
+# Market data stays local; its documentation and manifest are tracked.
+data/*
+!data/README.md
+!data/manifest.json
