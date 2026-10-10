@@ -42,6 +42,9 @@ def main() -> None:
         with pd.option_context("display.width", 250, "display.max_columns", 30):
             print(report)
         print(f"\nReport: {path.relative_to(data.ROOT)}")
+    elif args.command == "r001":
+        out = experiments.run_r001(args.period, args.allow_test)
+        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
 
 
 if __name__ == "__main__":
