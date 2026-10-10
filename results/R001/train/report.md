@@ -4,20 +4,22 @@
 
 Golden Zone turning on at a candle close; control C0 (Require Sweep off) versus V1 (on). Execution RXM-1 (next open, level-wick stop, first-obstacle target, 16 candles, bid/ask fills). Not GSE behaviour: a labelled research model.
 
-Git `03825be233` · dataset SHA-256 `a637520850ec…` · 156.6 weeks
+Git `fa24dda588` · dataset SHA-256 `a637520850ec…` · 156.6 weeks
 
 ## Results by arm and slippage
 
 Headline slippage 0.10 (fixed before validation). Expectancy and drawdown in R after spread and slippage.
 
-| arm@slippage | trades | trades_per_week | win_rate | avg_win_R | avg_loss_R | expectancy_R | profit_factor | max_drawdown_R | avg_mfe_R | avg_mae_R | median_planned_rr |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| C0@0.00 | 309.0 | 1.974 | 0.272 | 1.548 | -0.958 | -0.277 | 0.603 | 103.1 | 0.999 | 0.875 | 3.116 |
-| C0@0.10 | 309.0 | 1.974 | 0.269 | 1.372 | -1.021 | -0.378 | 0.493 | 131.3 | 0.883 | 0.923 | 2.741 |
-| C0@0.30 | 309.0 | 1.974 | 0.243 | 1.179 | -1.096 | -0.543 | 0.345 | 176.9 | 0.705 | 0.983 | 2.324 |
-| V1@0.00 | 2.000 | 0.013 | 0.000 | – | -1.000 | -1.000 | 0.000 | 2.000 | 0.642 | 1.000 | 7.250 |
-| V1@0.10 | 2.000 | 0.013 | 0.000 | – | -1.070 | -1.070 | 0.000 | 2.140 | 0.579 | 1.070 | 6.681 |
-| V1@0.30 | 2.000 | 0.013 | 0.000 | – | -1.183 | -1.183 | 0.000 | 2.366 | 0.471 | 1.183 | 5.756 |
+| arm@slippage | trades | trades_per_week | win_rate | avg_win_R | avg_loss_R | expectancy_R | profit_factor | max_drawdown_R | avg_mfe_R | avg_mae_R | median_planned_rr | avg_spread_R |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| C0@0.00 | 309.0 | 1.974 | 0.272 | 1.548 | -0.958 | -0.277 | 0.603 | 103.1 | 0.999 | 0.875 | 3.116 | 0.208 |
+| C0@0.10 | 309.0 | 1.974 | 0.269 | 1.372 | -1.021 | -0.378 | 0.493 | 131.3 | 0.883 | 0.923 | 2.741 | 0.193 |
+| C0@0.30 | 309.0 | 1.974 | 0.243 | 1.179 | -1.096 | -0.543 | 0.345 | 176.9 | 0.705 | 0.983 | 2.324 | 0.169 |
+| V1@0.00 | 2.000 | 0.013 | 0.000 | – | -1.000 | -1.000 | 0.000 | 2.000 | 0.642 | 1.000 | 7.250 | 0.236 |
+| V1@0.10 | 2.000 | 0.013 | 0.000 | – | -1.070 | -1.070 | 0.000 | 2.140 | 0.579 | 1.070 | 6.681 | 0.219 |
+| V1@0.30 | 2.000 | 0.013 | 0.000 | – | -1.183 | -1.183 | 0.000 | 2.366 | 0.471 | 1.183 | 5.756 | 0.192 |
+
+Exit reasons (C0, headline slippage): stop 208, time 69, target 31, stop_and_target 1.
 
 **V1 − C0 expectancy (slippage 0.10):** -0.691 R, 90% weekly bootstrap interval [-0.830, -0.557].
 
@@ -68,22 +70,22 @@ K: C0 candidates whose BOS had a paired qualified sweep (V1 keeps them). R: thos
 
 ## Rejection funnel (candles in the period, first failing Golden Zone condition)
 
-|  | ('C0', 'rejected') | ('C0', 'share_of_candles') | ('V1', 'rejected') | ('V1', 'share_of_candles') |
+|  | C0 rejected | C0 share | V1 rejected | V1 share |
 |---|---|---|---|---|
-| ('long', 'direction') | 35036.0 | 0.495 | 35036.0 | 0.495 |
-| ('long', 'location') | 30623.0 | 0.433 | 30623.0 | 0.433 |
-| ('long', 'bias') | 2082.0 | 0.029 | 2082.0 | 0.029 |
-| ('long', 'recent_bos') | 2391.0 | 0.034 | 2391.0 | 0.034 |
-| ('long', 'room') | 333.0 | 0.005 | 333.0 | 0.005 |
-| ('long', 'sweep') | 0.000 | 0.000 | 315.0 | 0.004 |
-| ('long', 'qualified') | 0.000 | 0.004 | 0.000 | 0.000 |
-| ('short', 'direction') | 35745.0 | 0.505 | 35745.0 | 0.505 |
-| ('short', 'location') | 30064.0 | 0.425 | 30064.0 | 0.425 |
-| ('short', 'bias') | 2106.0 | 0.030 | 2106.0 | 0.030 |
-| ('short', 'recent_bos') | 2298.0 | 0.032 | 2298.0 | 0.032 |
-| ('short', 'room') | 266.0 | 0.004 | 266.0 | 0.004 |
-| ('short', 'sweep') | 0.000 | 0.000 | 297.0 | 0.004 |
-| ('short', 'qualified') | 0.000 | 0.004 | 0.000 | 0.000 |
+| long · direction | 35036.0 | 0.495 | 35036.0 | 0.495 |
+| long · location | 30623.0 | 0.433 | 30623.0 | 0.433 |
+| long · bias | 2082.0 | 0.029 | 2082.0 | 0.029 |
+| long · recent_bos | 2391.0 | 0.034 | 2391.0 | 0.034 |
+| long · room | 333.0 | 0.005 | 333.0 | 0.005 |
+| long · sweep | 0.000 | 0.000 | 315.0 | 0.004 |
+| long · qualified | 0.000 | 0.004 | 0.000 | 0.000 |
+| short · direction | 35745.0 | 0.505 | 35745.0 | 0.505 |
+| short · location | 30064.0 | 0.425 | 30064.0 | 0.425 |
+| short · bias | 2106.0 | 0.030 | 2106.0 | 0.030 |
+| short · recent_bos | 2298.0 | 0.032 | 2298.0 | 0.032 |
+| short · room | 266.0 | 0.004 | 266.0 | 0.004 |
+| short · sweep | 0.000 | 0.000 | 297.0 | 0.004 |
+| short · qualified | 0.000 | 0.004 | 0.000 | 0.000 |
 
 ## Limitations
 

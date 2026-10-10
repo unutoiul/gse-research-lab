@@ -8,7 +8,7 @@
     ],
     "weeks": 156.6,
     "git": {
-      "commit": "03825be233421d96a60076f383876c37cdf695da",
+      "commit": "fa24dda588cb2e455f721e4b0fc773d54c00565a",
       "dirty": false
     },
     "dataset": {
@@ -64,6 +64,7 @@
       "avg_mfe_R": 0.9987469894009897,
       "avg_mae_R": 0.874744168996244,
       "median_planned_rr": 3.116094986808271,
+      "avg_spread_R": 0.20840346207842875,
       "avg_bars_held": 7.106796116504855,
       "trades_per_week": 1.9735401459854014,
       "trades_per_month": 8.552007299270073,
@@ -84,6 +85,7 @@
       "avg_mfe_R": 0.8828982565078827,
       "avg_mae_R": 0.9228679437027161,
       "median_planned_rr": 2.74124433456954,
+      "avg_spread_R": 0.19293126422651288,
       "avg_bars_held": 7.106796116504855,
       "trades_per_week": 1.9735401459854014,
       "trades_per_month": 8.552007299270073,
@@ -104,6 +106,7 @@
       "avg_mfe_R": 0.7052527571320716,
       "avg_mae_R": 0.9833300452019273,
       "median_planned_rr": 2.3239875389409597,
+      "avg_spread_R": 0.16865438409150535,
       "avg_bars_held": 7.106796116504855,
       "trades_per_week": 1.9735401459854014,
       "trades_per_month": 8.552007299270073,
@@ -124,6 +127,7 @@
       "avg_mfe_R": 0.6424794359576675,
       "avg_mae_R": 1.0,
       "median_planned_rr": 7.250382335660587,
+      "avg_spread_R": 0.23622889593550633,
       "avg_bars_held": 8.5,
       "trades_per_week": 0.012773722627737225,
       "trades_per_month": 0.055352798053527975,
@@ -141,6 +145,7 @@
       "avg_mfe_R": 0.5790788013318803,
       "avg_mae_R": 1.0698344899232226,
       "median_planned_rr": 6.681027814213742,
+      "avg_spread_R": 0.2190995227898157,
       "avg_bars_held": 8.5,
       "trades_per_week": 0.012773722627737225,
       "trades_per_month": 0.055352798053527975,
@@ -158,6 +163,7 @@
       "avg_mfe_R": 0.47127872127871834,
       "avg_mae_R": 1.1829942391901849,
       "median_planned_rr": 5.75634164106812,
+      "avg_spread_R": 0.19153864867116235,
       "avg_bars_held": 8.5,
       "trades_per_week": 0.012773722627737225,
       "trades_per_month": 0.055352798053527975,
@@ -183,6 +189,7 @@
       "avg_mfe_R": 0.5790788013318803,
       "avg_mae_R": 1.0698344899232226,
       "median_planned_rr": 6.681027814213742,
+      "avg_spread_R": 0.2190995227898157,
       "avg_bars_held": 8.5,
       "exit_stop": 2
     },
@@ -198,6 +205,7 @@
       "avg_mfe_R": 0.8848775363461627,
       "avg_mae_R": 0.9219105069195207,
       "median_planned_rr": 2.7196467991170863,
+      "avg_spread_R": 0.19276078697202884,
       "avg_bars_held": 7.09771986970684,
       "exit_stop": 206,
       "exit_time": 69,
@@ -217,6 +225,7 @@
     "avg_mfe_R": NaN,
     "avg_mae_R": NaN,
     "median_planned_rr": NaN,
+    "avg_spread_R": NaN,
     "avg_bars_held": NaN
   }
 }
