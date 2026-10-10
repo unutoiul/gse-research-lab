@@ -52,12 +52,12 @@ Chronological split (plan rule: train up to 2018, validate 2019–2022, test 202
 - **Train:** 2016-01-01 to 2018-12-31. Rules are frozen; R001 itself tunes nothing. Warm-up history (≥ 200 15m candles and enough 4H candles for the HTF readout) is taken from the end of 2015, but no candidate before 2016 is scored.
 - **Validate:** 2019-01-01 to 2022-12-31. The decision rule below is applied here.
 - **Test:** 2023-01-01 to the last complete week, opened **once**, after the owner approves the validation conclusion. It is reported in two parts:
-  - **2023–2025, "exposed":** the first session viewed website Early outcomes, a related sweep-mandatory rule, on this period (audit section 10).
+  - **2023–2025, "exposed":** the first session viewed website Early outcomes, a related sweep-mandatory rule, on this period (audit section 9).
   - **2026-01-01 onward, "unexposed".**
 
 **Cost regime differs across the split.** The median close spread is 24–28% of the median 15m candle range in 2016–2019, 14–17% in 2023–2025 and 8% in 2026 (gold's range grew faster than its spread). The same rule pays very different costs in R across periods, so results are reported per period and with costs shown separately. A period comparison must not be read as a change in edge.
 
-This split differs from `BACKTEST.md` (train 2023–24 / validate 2025 / test 2026), which was declared for the archived BOS strategy (audit section 9). Two reasons: OANDA history allows a much longer train/validation span, and 2023–2025 is already partly exposed.
+This split differs from `BACKTEST.md` (train 2023–24 / validate 2025 / test 2026), which was declared for the archived BOS strategy (audit section 8). Two reasons: OANDA history allows a much longer train/validation span, and 2023–2025 is already partly exposed.
 
 ## Metrics (per arm, per stratum, per period)
 

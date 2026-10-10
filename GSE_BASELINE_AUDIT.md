@@ -2,13 +2,13 @@
 
 Date: 2026-10-10 · Phase 1 of the GSE Engineering Research plan · Read-only: no baseline file was modified.
 
-This document records what the code **actually does**, with file and line references. Where earlier documents (`AUDIT.md`, `README.md`, `BACKTEST.md`, guides) disagree with the code, the code wins and the disagreement is listed in section 9.
+This document records what the code **actually does**, with file and line references. Where earlier documents (`AUDIT.md`, `README.md`, `BACKTEST.md`, guides) disagree with the code, the code wins and the disagreement is listed in section 8.
 
-**Verification status.** A first draft was written earlier on 2026-10-10. In a second pass the same day, every definition in sections 1–9 was re-read against the source files cited, and the test suites were re-run. Corrections and additions from that pass are listed in Appendix A. Section 10 is different: it reports observations from the first session that could not be re-checked from the repository.
+**Verification status.** A first draft was written earlier on 2026-10-10. In a second pass the same day, every definition in sections 1–8 was re-read against the source files cited, and the test suites were re-run. Corrections and additions from that pass are listed in Appendix A. Section 9 is different: it reports observations from the first session that could not be re-checked from the repository.
 
 ## 0. Scope, sources and fingerprints
 
-**Baseline: GSE v4.0.** The brief names v4.0 as the baseline for the audit (Phase 1) and the reproduction (Phase 4), and the production webhook feed sends `"ver":"4.0"` payloads. v2.3 is described only as a reference, in section 8.
+**Baseline: GSE v4.0.** The brief names v4.0 as the baseline for the audit (Phase 1) and the reproduction (Phase 4), and the production webhook feed sends `"ver":"4.0"` payloads.
 
 Repository audited: `gse-website` at commit `19564ee` (2026-10-10 13:39 +0700), working tree clean. GSE v4.0 is in two codebases. The **Pine indicator** produces the evidence. The **website** (TypeScript) decides the Early / Core / A+ setup stages. Both are audited here, because the A+ qualification exists only on the website.
 
@@ -17,7 +17,6 @@ Repository audited: `gse-website` at commit `19564ee` (2026-10-10 13:39 +0700), 
 | Live indicator (generated, pasted into TradingView) | `tradingview/gse_4.0/GoldStructureEngine_4.0.pine` (1,997 lines) | `2df7b96ac7152e42a2c902d21becc184389f4175b87ca11f59325163287307fd` |
 | Indicator source parts (joined by `build.mjs`, in this order) | `tradingview/gse_4.0/src/{core,context,inputs,indicator-defaults,indicator-inputs,engine,analysis,mtf,indicator,messages,alerts}.pine` | `build.mjs --check`: generated file matches the parts |
 | Research strategy (separate execution model) | `tradingview/gse_4.0/GoldStructureEngineStrategy_4.0.pine` (964 lines) | `a32e6642f70db720a63cef11d4d0aa43ccb4ea0c2e35edf4611d845377fb3c15` |
-| v2.3 indicator (reference) | `tradingview/gse_2.3/GoldStructureEngine_2.3.pine` | `0a38a3c70c73238a8be928ac71c4f5a4706ceb672f056d516a4f848c501c8297` |
 | Website GSE setups engine | `api/_lib/gseSetups.ts` | `a228b8ea04ec764a98e832e12bdbf3bfe44fe09cc894c0e8a76a301968aed6ee` |
 | Website setup policy | `api/_lib/gseSetupPolicy.ts` (`setup-v1`) | `008ed924cffcc687b55124bdce6a17156739c25af8a269d9128211a219a1362d` |
 
@@ -124,7 +123,7 @@ Fixed constants (`indicator-defaults.pine:3-18`): flip wick 35%, flip candidate 
 
 - **Swings:** `ph = ta.pivothigh(high, L, L)` and `pl = ta.pivotlow(low, L, L)` on confirmed candles (`core:251-264`). The last two of each give HH/LH/HL/LL (`core:266-270`).
 - **Break** (`core:272-285`): a confirmed close above the latest swing high whose bar id has not been used yet. If the previous direction was ≥ 0 it is a **BOS**; if it was −1 it is a **CHoCH**. Symmetric for the low side. A break consumes that swing's bar id (`used_ph_bar`), so the same swing cannot break twice; a new swing at the same price can. Direction (`struct_dir`) is updated after both checks, so a bull and a bear break on one candle leave the direction bearish.
-- **Only BOS counts as "recent structure" in the indicator.** `last_bull_bos_bar` is set by `bos_bull` only and reset by `bos_bear` or `choch_bear` (`context:116-124`). A CHoCH never satisfies BOS recency for the Golden Zone or confluence, and a CHoCH resets the opposite side. **Consequence: after a reversal the Golden Zone needs two breaks**, the CHoCH and then a BOS in the new direction. That was deliberate in v2.3 (its comment at lines 805-814 explains it), and v4.0 keeps it. The **website setups engine accepts BOS or CHoCH events** as the structure step (`gseSetups.ts:592-603`, `782-789`). Its context path (`bos_age_bars`) carries BOS only, so on the website a CHoCH counts only if its event webhook arrived.
+- **Only BOS counts as "recent structure" in the indicator.** `last_bull_bos_bar` is set by `bos_bull` only and reset by `bos_bear` or `choch_bear` (`context:116-124`). A CHoCH never satisfies BOS recency for the Golden Zone or confluence, and a CHoCH resets the opposite side. **Consequence: after a reversal the Golden Zone needs two breaks**, the CHoCH and then a BOS in the new direction. The **website setups engine accepts BOS or CHoCH events** as the structure step (`gseSetups.ts:592-603`, `782-789`). Its context path (`bos_age_bars`) carries BOS only, so on the website a CHoCH counts only if its event webhook arrived.
 
 ### 3.4 Liquidity: equal highs/lows, previous day/week, sweeps
 
@@ -221,7 +220,7 @@ It is evaluated on every update, including intrabar. `zone_staged_*` fires live 
 
 ### 3.15 Website trade plans and JEV (context only)
 
-`assessWebsiteProposal` (`websitePlanRules.ts:423-509`): a confirmed 15m snapshot no older than one candle, a confirmed 4H (≤ 8h) with non-zero trend, a 1H (≤ 2h), and an untouched, not-in-contact, fresh level on the 4H-trend side within **1 ATR** of price (`maxEntryDistanceAtr = 1`, `:159`). The target engine requires ≥ 1.5R and ≤ 8 ATR (`websiteTargetEngine.ts:14-17`). Approval requires a JEV probability ≥ 0.60 (`websiteTradeTracking.ts:8`). See section 10 for what was measured.
+`assessWebsiteProposal` (`websitePlanRules.ts:423-509`): a confirmed 15m snapshot no older than one candle, a confirmed 4H (≤ 8h) with non-zero trend, a 1H (≤ 2h), and an untouched, not-in-contact, fresh level on the 4H-trend side within **1 ATR** of price (`maxEntryDistanceAtr = 1`, `:159`). The target engine requires ≥ 1.5R and ≤ 8 ATR (`websiteTargetEngine.ts:14-17`). Approval requires a JEV probability ≥ 0.60 (`websiteTradeTracking.ts:8`). See section 9 for what was measured.
 
 ## 4. Rejection map: every condition that can stop a candidate
 
@@ -263,7 +262,7 @@ The engine stores per-check states (`done` / `waiting` / `failed`) and a timelin
 | B6 | Low-Med | The website parser rejects TradingView's **3-hour last 4H candle** (closes 17:00 New York), so that candle never produces a 4H snapshot. The website falls back to a 4H snapshot up to 8h old. | `websitePlanRules.ts:190`; DB: 4H closes only at 02/06/10/14/18 UTC | Model the same gap, or document the difference. |
 | B7 | Medium | **12-open-setups cap** silently refuses new setups, with no reason recorded. | `gseSetups.ts:652` | Funnel reports must count this rejection explicitly. |
 | B8 | Low | Duplicates: live events at most once per type per candle; the website deduplicates on (tf, time, event, level, phase). Tap and reaction for one level both update one setup, idempotently. | `alerts:204-210`; `websiteEvidenceKey` | One candidate per level and candle in research. |
-| B9 | Medium | **Feed dependency.** Tick volume (confirmation factor) and wick extremes differ between brokers. Measured: OANDA vs BlackBull 15m closes median 0.12 apart, but a weekly high differed by 4.71. | section 10 | Research on OANDA will not reproduce BlackBull charts exactly. Report this, and test with and without volume. |
+| B9 | Medium | **Feed dependency.** Tick volume (confirmation factor) and wick extremes differ between brokers. Measured: OANDA vs BlackBull 15m closes median 0.12 apart, but a weekly high differed by 4.71. | section 9 | Research on OANDA will not reproduce BlackBull charts exactly. Report this, and test with and without volume. |
 | B10 | Low | **Test harness defect.** `test-pine-subset.mjs:59` turns a function's last line into `return` even inside a loop, so the translated `f_trim_role` removes only one level per call; real Pine loops until the cap holds. | reproduced 2026-10-10 | Correct it in any parity harness. Existing tests may miss multi-level trims. |
 | B11 | Info | **CHoCH asymmetry:** the indicator's BOS recency ignores CHoCH; website Core accepts CHoCH. | `context:116-124`; `gseSetups.ts:782-789` | A candidate can be Core on the website while the indicator shows no recent BOS. Record both. |
 | B12 | Info | Equal-high/low sweeps need no candle direction; day, week and swing sweeps do. | `core:490-516` vs `542-562` | Treat as two sweep classes in R001. |
@@ -291,7 +290,7 @@ These are not defects in GSE. They are places where a straightforward port would
 
 - **No objective entry, stop, target or exit in the indicator.** Any backtest of indicator setups needs an explicitly labelled **research execution model**. Existing models: the Pine strategy (fresh touch + H4 + website targets), the website setups outcome (+1R vs invalidation, 16 candles, no costs) and the website plan engine.
 - **No displacement measure, no level-age effect, no volatility regime.** Testing R008 means adding a new definition, which would be a research rule, not baseline.
-- **No calibrated probability anywhere.** The confluence score and setup quality are additive evidence points. JEV probabilities were measured to be uninformative (section 10).
+- **No calibrated probability anywhere.** The confluence score and setup quality are additive evidence points. JEV probabilities were measured to be uninformative (section 9).
 - **No rejection log in the indicator.** Section 4.1 has to be reconstructed in research.
 
 ## 7. Existing research assets
@@ -303,21 +302,13 @@ These are not defects in GSE. They are places where a straightforward port would
 - Stored production evidence: `gse_website_evidence` (BlackBull feed, 15m/1H/4H snapshots and events since 2026-09-29). This is the only source of real TradingView outputs available for parity checks.
 - `gse-research/gse_lab/` (this repository, uncommitted draft): an OANDA M15 downloader (mid OHLC, bid/ask close, tick volume, to Parquet), TradingView-style 1H/4H/D/W aggregation, and a per-year quality report. **It has not been run here.** There is no `data/` directory and no tests (`tests/` is empty). Two limitations: the `spread` column is measured at the candle close only, and the weekly `close_time` is inferred from the last candle present.
 
-## 8. GSE v2.3 (reference)
-
-`tradingview/gse_2.3/GoldStructureEngine_2.3.pine` (1,410 lines). `GSE_2.3_Single_Timeframe_Review.md` reviewed an earlier 1,249-line revision, so its line numbers and some findings may not match the current file. The differences that matter for research:
-- **Setups lived in Pine:** `setup_bull = bos_bull and bias_ok_bull and space_ok_bull and (not i_require_sweep or sweep_ok_bull)` (lines 815-816). A qualifying sweep upgrades **CORE** to **A+** ("4/4 Confluence"); "Require Liquidity Sweep for Setup" is off by default. The candidate is the **BOS candle itself**, not a retest.
-- Single timeframe (no MTF); clustering **on** by default; a reference trade plan with stop and target inside the indicator.
-- Its own review lists unresolved issues: `long_zone/short_zone` accept any three of four conditions and do not require `at_sup/at_res` or enforce the sweep switch; the trade-plan readiness differs from its message.
-- In v2.3, research question R001 is literally **"CORE versus A+"**.
-
-## 9. Disagreements between documents and code
+## 8. Disagreements between documents and code
 
 - `AUDIT.md` (2026-09-29) describes a rebuild that added frozen reference plans and removed directional MTF requests. **Current code has no plans** (removed 2026-10-05, `CHANGELOG.md`) and **has MTF requests again** (`mtf.pine`, readout only). Its F1–F3 fixes are present in current code.
-- `README.md` (4.0) describes JEV approval at 60% as the trade-proposal path. That matches the code, but see section 10 for its measured value.
+- `README.md` (4.0) describes JEV approval at 60% as the trade-proposal path. That matches the code, but see section 9 for its measured value.
 - `BACKTEST.md` describes "Select Entry Model = BOS" as the baseline protocol, with sweep-required variants, BOS reference plans and 30-bar holding. `FRESH_LEVEL_STRATEGY.md` and the code say those modes were archived (`audit/strategy-before-simplification/`). The current strategy is fresh touch + H4 only. `BACKTEST.md`'s chronological split (train 2023–24, validate 2025, test 2026-01-01 to 2026-09-29) was declared for that archived strategy.
 
-## 10. Measured facts available before research (2026-10-10)
+## 9. Measured facts available before research (2026-10-10)
 
 **Provenance: not re-verified.** These come from read-only checks in the first session on 2026-10-10: database queries, OANDA API pulls and a TypeScript prototype that was later deleted at the owner's request. The second pass could not reproduce them from the repository, because there is no local data and the prototype is gone. Treat them as leads. The research engine has to reproduce them before they are relied on.
 
@@ -331,7 +322,6 @@ These are not defects in GSE. They are places where a straightforward port would
 ## Appendix A. Second-pass changes to the first draft (2026-10-10)
 
 Corrections (the first draft was wrong or imprecise):
-- **Baseline version.** The first draft reported a version conflict in the brief (v4.0 versus v2.3). The current brief says v4.0 for both the audit and the reproduction, so the conflict is gone.
 - **Bias with mixed swings (3.6).** With swing points = 0, the score is always 0. The first draft said ±0.5. The break fallback applies only when non-zero swings oppose the break (`core:231`).
 - **Strategy fingerprint (0).** The first draft's abbreviated SHA-256 for the strategy had the wrong suffix. Full hashes are now listed.
 - **Confluence cap (3.9).** Without a recent BOS, the Require Sweep cap uses "any qualified sweep within 6 bars", not the BOS pairing (`context:196-197`).
@@ -344,4 +334,4 @@ Additions (correct in the first draft, but missing):
 - The rejection check counts unqualified sweeps, and Early's reaction is not tied to the anchor level (3.9, 3.14).
 - Website windows are wall-clock (B16). The outcome report drops late-session and Friday entries as data gaps (B15).
 - `level_reaction` covers only the first candle of a visit (B17). Historical candles send no alerts (3.13).
-- Status of the drafted `gse_lab` pipeline (7), the stale `BACKTEST.md` (9), and provenance and data-exposure notes for section 10.
+- Status of the drafted `gse_lab` pipeline (7), the stale `BACKTEST.md` (8), and provenance and data-exposure notes for section 9.
