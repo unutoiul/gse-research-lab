@@ -1,12 +1,15 @@
-"""GSE research lab command line.
+"""GSE research command line.
 
-    python -m gse_research download [--from 2006-01-01]   fetch or update OANDA candles
-    python -m gse_research quality                         per-year data quality report
+    python -m gse_research download [--granularity M15] [--from 2006-01-01]
+        fetch or update OANDA XAU_USD candles and data/manifest.json
+    python -m gse_research quality
+        per-year data quality report, written to results/data_quality/
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 
 import pandas as pd
 
@@ -16,17 +19,24 @@ from . import data, quality
 def main() -> None:
     parser = argparse.ArgumentParser(prog="gse_research")
     sub = parser.add_subparsers(dest="command", required=True)
-    dl = sub.add_parser("download", help="fetch or update OANDA XAU_USD M15 candles")
+    dl = sub.add_parser("download", help="fetch or update OANDA XAU_USD candles")
+    dl.add_argument("--granularity", choices=sorted(data.STEP), default="M15")
     dl.add_argument("--from", dest="start", default=data.FIRST_AVAILABLE)
-    sub.add_parser("quality", help="per-year data quality report")
+    sub.add_parser("quality", help="per-year M15 data quality report")
     args = parser.parse_args()
 
     if args.command == "download":
-        df = data.update(args.start)
-        print(f"{len(df):,} M15 candles, {df['time'].iloc[0]:%Y-%m-%d} to {df['time'].iloc[-1]:%Y-%m-%d %H:%M} UTC")
+        df = data.update(args.granularity, args.start)
+        print(f"{len(df):,} {args.granularity} candles, {df['time'].iloc[0]:%Y-%m-%d} to {df['time'].iloc[-1]:%Y-%m-%d %H:%M} UTC")
     elif args.command == "quality":
-        with pd.option_context("display.width", 200, "display.max_columns", 20):
-            print(quality.year_report(data.load_m15()))
+        manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]
+        df = data.load("M15", session_only=False)
+        if data.file_sha256(data.dataset_path("M15")) != manifest["sha256"]:
+            raise SystemExit("data/manifest.json does not match the M15 cache; run download again")
+        path, report = quality.write_report(df, manifest, data.ROOT / "results" / "data_quality")
+        with pd.option_context("display.width", 250, "display.max_columns", 30):
+            print(report)
+        print(f"\nReport: {path.relative_to(data.ROOT)}")
 
 
 if __name__ == "__main__":

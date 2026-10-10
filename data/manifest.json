@@ -1,0 +1,17 @@
+{
+  "XAU_USD_M15.parquet": {
+    "file": "XAU_USD_M15.parquet",
+    "provider": "OANDA v20 REST API, /v3/instruments/{instrument}/candles",
+    "environment": "practice",
+    "instrument": "XAU_USD",
+    "granularity": "M15",
+    "price": "mid, bid and ask OHLC (price=MBA); complete candles only",
+    "volume": "OANDA tick volume (price updates), not traded volume",
+    "time": "candle open, UTC",
+    "rows": 492067,
+    "first_open": "2006-03-19T20:15:00+00:00",
+    "last_open": "2026-10-09T20:45:00+00:00",
+    "sha256": "a637520850ecc80034524342317282a80b55683d7816e408102c275ef1eb9897",
+    "downloaded_at": "2026-10-10T07:53:18+00:00"
+  }
+}

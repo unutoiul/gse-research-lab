@@ -44,14 +44,18 @@ GSE defines no entry or exit (audit section 6). R001 therefore uses one fixed, d
 
 ## Data and periods
 
-OANDA XAU_USD M15 mid and bid/ask OHLC, with 1H/4H/D/W built using TradingView's session anchors (audit P4). The usable start year comes from the per-year quality report. Proposed chronological split, to confirm after that report:
-- **Train:** first usable year to 2018. Rules are frozen; R001 itself tunes nothing.
-- **Validate:** 2019–2022. The decision rule below is applied here.
+OANDA XAU_USD M15 mid and bid/ask OHLC, with 1H/4H/D/W built using TradingView's session anchors (audit P4). The dataset is `data/manifest.json`, SHA-256 `a6375208…eb9897`: 492,067 candles, 2006-03-19 to 2026-10-09.
+
+**First usable year: 2016** (`results/data_quality/XAU_USD_M15.md`). From 2016 every year is clean: no error-level issues, coverage ≥ 0.99 and at most 0.1% thin candles. From 2006 to 2015, OANDA traded through the 17:00–18:00 New York break and at weekend hours with real ticks, so TradingView's current session model does not fit those years. They are excluded rather than reshaped.
+
+Chronological split (plan rule: train up to 2018, validate 2019–2022, test 2023 onward):
+- **Train:** 2016-01-01 to 2018-12-31. Rules are frozen; R001 itself tunes nothing. Warm-up history (≥ 200 15m candles and enough 4H candles for the HTF readout) is taken from the end of 2015, but no candidate before 2016 is scored.
+- **Validate:** 2019-01-01 to 2022-12-31. The decision rule below is applied here.
 - **Test:** 2023-01-01 to the last complete week, opened **once**, after the owner approves the validation conclusion. It is reported in two parts:
   - **2023–2025, "exposed":** the first session viewed website Early outcomes, a related sweep-mandatory rule, on this period (audit section 10).
   - **2026-01-01 onward, "unexposed".**
 
-If the quality report rejects early years, the split shifts, keeping 2023 onward as the test.
+**Cost regime differs across the split.** The median close spread is 24–28% of the median 15m candle range in 2016–2019, 14–17% in 2023–2025 and 8% in 2026 (gold's range grew faster than its spread). The same rule pays very different costs in R across periods, so results are reported per period and with costs shown separately. A period comparison must not be read as a change in edge.
 
 This split differs from `BACKTEST.md` (train 2023–24 / validate 2025 / test 2026), which was declared for the archived BOS strategy (audit section 9). Two reasons: OANDA history allows a much longer train/validation span, and 2023–2025 is already partly exposed.
 
@@ -84,7 +88,9 @@ Each stage ends with tests run, a leakage check, saved results, and a short repo
 2. **Data:** extend the downloader to keep bid and ask OHLC, then download (the OANDA practice token is already in `.env`). Write Parquet and run the per-year quality report. Tests:
    - no duplicate candles, and monotonic time;
    - the 3-hour last 4H candle, the daily 17:00–18:00 New York break, and DST weeks;
-   - 1H/4H close times equal to the stored BlackBull snapshot close times.
+   - 1H/4H close times equal to the stored BlackBull snapshot close times (moved to stage 4, which has the snapshot access).
+
+   *Done 2026-10-10:* 492,067 candles; 26 tests (synthetic sessions, both DST changes, no-look-ahead joins, truncation invariance, cache invariants); first usable year 2016.
 3. **`structure.py`:** a port of `core.pine`, `context.pine` and `f_bias_score`, keeping the audit's order of operations (1.1) and porting hazards P2–P6. On every candle, record **every** failing Golden Zone condition and the first one, in audit 4.1 order.
 4. **Parity gate, before any experiment:**
    - Settle the pivot tie rule (audit P1) against stored TradingView snapshots.

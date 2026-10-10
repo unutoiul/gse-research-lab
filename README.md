@@ -31,6 +31,7 @@ OANDA_ENV=practice
 ## Commands
 
 ```powershell
-.venv\Scripts\python -m gse_research --help
+.venv\Scripts\python -m gse_research download   # OANDA XAU_USD M15 to data/, see data/README.md
+.venv\Scripts\python -m gse_research quality    # data-quality report to results/data_quality/
 .venv\Scripts\python -m pytest
 ```
