@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import backtest, data, experiments, metrics, signals, structure
+from . import backtest, data, experiments, metrics, resources, signals, structure
 
 SPACE = {
     "swing_len": list(range(4, 21)),
@@ -132,7 +132,7 @@ def _neighbours(cfg: dict) -> list[dict]:
 
 
 def run_study(trials: int = 400, seed: int = 20261011, workers: int | None = None, out_dir: Path | None = None, progress=None) -> Path:
-    workers = workers or max(1, min(16, (os.cpu_count() or 2) - 2))
+    workers = workers or resources.default_workers()
     configs = sample_configs(trials, seed)
     df = _run_all(configs, workers, progress)
     df["is_default"] = df["trial"] == 0

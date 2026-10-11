@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import data, experiments, metrics
+from . import data, experiments, metrics, resources
 from . import strategy as st
 
 GRID = list(range(4, 21))
@@ -66,7 +66,7 @@ def evaluate(cfg: dict) -> dict:
 
 
 def _evaluate_all(configs: list[dict], workers: int | None, progress=None) -> pd.DataFrame:
-    workers = workers or max(1, min(16, (os.cpu_count() or 2) - 2))
+    workers = workers or resources.default_workers()
     configs = sorted(configs, key=lambda c: c["swing_len"])
     rows = []
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as pool:

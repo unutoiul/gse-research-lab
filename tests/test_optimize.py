@@ -17,3 +17,11 @@ def test_every_value_is_a_valid_indicator_input():
         structure.CoreParams(**{k: c[k] for k in optimize.CORE_KEYS})  # accepted by the port
         if not c["cluster_on"]:
             assert c["cluster_atr"] == optimize.DEFAULT["cluster_atr"]
+
+
+def test_worker_count_follows_available_memory():
+    from gse_research.resources import default_workers
+    assert default_workers(available_gb=4.1, cpus=24) == 3          # (4.1 - 1.5) / 0.8
+    assert default_workers(available_gb=30.0, cpus=24) == 16        # capped
+    assert default_workers(available_gb=30.0, cpus=4) == 2          # CPUs - 2
+    assert default_workers(available_gb=1.0, cpus=24) == 1          # never zero

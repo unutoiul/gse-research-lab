@@ -226,6 +226,26 @@ def _o2_result(out: Path, params: dict, source: str | None = None) -> dict:
             "report_md": (out / "report.md").read_text(encoding="utf-8"), "provenance": _provenance({"source": source} if source else None)}
 
 
+def _o3_result(out: Path, params: dict, source: str | None = None) -> dict:
+    trials = pd.read_csv(out / "trials.csv")
+    cols = ["stop_buffer_atr", "min_r", "max_atr", "train_net_trades", "train_net_expectancy_R", "train_gross_expectancy_R",
+            "val_net_trades", "val_net_expectancy_R", "val_half_expectancy_R", "val_gross_expectancy_R", "val_net_max_drawdown_R"]
+    ranked = trials.sort_values("train_net_expectancy_R", ascending=False)[cols]
+    tables = {"All settings, best training result first": table(ranked, index=False)}
+    for m in sorted(trials["max_atr"].unique()):
+        pivot = trials[trials["max_atr"] == m].pivot(index="stop_buffer_atr", columns="min_r", values="val_net_expectancy_R").round(3)
+        pivot.index.name = "stop buffer \\ min R"
+        tables[f"Validation net expectancy, max {m:g} ATR"] = table(pivot)
+    both_gross = int(((trials["train_gross_expectancy_R"] > 0) & (trials["val_gross_expectancy_R"] > 0)).sum())
+    return {"kind": "search_o3", "title": f"O3 · Strategy v4.0 stop and target rules · {len(trials)} settings", "params": params,
+            "summary": clean({"settings": len(trials), "positive_val_net": int((trials["val_net_expectancy_R"] > 0).sum()),
+                              "positive_val_half": int((trials["val_half_expectancy_R"] > 0).sum()),
+                              "positive_gross_both_periods": both_gross,
+                              "best_val_net_expectancy_R": trials["val_net_expectancy_R"].max()}),
+            "equity": None, "tables": tables, "report_md": (out / "report.md").read_text(encoding="utf-8"),
+            "provenance": _provenance({"source": source} if source else None)}
+
+
 RUNNERS = {"data_update": run_data_update, "r001": run_r001, "strategy_backtest": run_strategy_backtest,
            "search_o1": run_search_o1, "search_o2": run_search_o2}
 
@@ -240,4 +260,6 @@ def committed_results() -> list[dict]:
         out.append(_o1_result(root / "O1", {"trials": 400}, "results/O1"))
     if (root / "O2" / "trials.csv").exists():
         out.append(_o2_result(root / "O2", {}, "results/O2"))
+    if (root / "O3" / "trials.csv").exists():
+        out.append(_o3_result(root / "O3", {}, "results/O3"))
     return out
