@@ -215,3 +215,41 @@ def _report(df, eligible, top, chosen, sens, prov) -> str:
               "- Only the Golden Zone signal with RXM-1 execution is searched; stops, targets and holding time are not tuned.",
               "- Provisional until the parity gate (pivot tie rule, OANDA versus BlackBull).", ""]
     return "\n".join(lines)
+
+
+def gross_check(trial_ids: list[int]) -> pd.DataFrame:
+    """Signal or costs? The same trades filled at mid prices with no slippage, for chosen trials.
+
+    Appends a section to results/O1/report.md and writes results/O1/gross.csv.
+    """
+    _init()
+    mid = _M15.copy()
+    for side in ("bid", "ask"):
+        for k in ("open", "high", "low", "close"):
+            mid[f"{side}_{k}"] = mid[k]
+    out_dir = data.ROOT / "results" / "O1"
+    trials = pd.read_csv(out_dir / "trials.csv")
+    rows = []
+    for tr in trial_ids:
+        rec = trials[trials["trial"] == tr].iloc[0]
+        cfg = {k: (bool(rec[k]) if isinstance(DEFAULT[k], bool) else rec[k].item()) for k in SPACE}
+        core = structure.CoreParams(**{k: cfg[k] for k in CORE_KEYS})
+        ctx = structure.ContextParams(require_sweep=cfg["require_sweep"], space_mult=cfg["space_mult"])
+        prep, htf = _inputs(cfg["swing_len"])
+        out, _ = structure.run(_M15, core, ctx, prep=prep)
+        trades = backtest.simulate(mid, signals.golden_zone_candidates(_M15, out, htf), backtest.Execution(slippage=0.0))
+        row = {"trial": tr}
+        for name, (a, b) in (("train", TRAIN), ("val", VALIDATE)):
+            part = trades[trades["time"].between(pd.Timestamp(a, tz="UTC"), pd.Timestamp(b, tz="UTC"), inclusive="left")]
+            row[f"{name}_trades"] = metrics.summarize(part)["trades"]
+            row[f"{name}_gross_R"] = metrics.summarize(part)["expectancy_R"]
+            row[f"{name}_net_R"] = rec[f"{name}_expectancy_R"]
+        rows.append(row)
+    df = pd.DataFrame(rows).set_index("trial")
+    df.to_csv(out_dir / "gross.csv")
+    section = ["", "## Signal or costs? Gross expectancy (mid-price fills, no slippage)", "",
+               "Trial 0 is the GSE defaults. Net = spread + 0.10 slippage, as above.", "",
+               experiments._md(df), ""]
+    with open(out_dir / "report.md", "a", encoding="utf-8") as f:
+        f.write("\n".join(section))
+    return df

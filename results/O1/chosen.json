@@ -1,0 +1,102 @@
+{
+  "provenance": {
+    "git": {
+      "commit": "d4e2a37d155bccf29871109dc07b4963b5f102a9",
+      "dirty": false
+    },
+    "dataset_sha256": "a637520850ecc80034524342317282a80b55683d7816e408102c275ef1eb9897",
+    "seed": 20261011,
+    "trials": 400,
+    "space": {
+      "swing_len": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "zone_count": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "flip_on": [
+        true,
+        false
+      ],
+      "cluster_on": [
+        false,
+        true
+      ],
+      "cluster_atr": [
+        0.3,
+        0.5,
+        0.8,
+        1.0,
+        1.5
+      ],
+      "eq_atr": [
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.3
+      ],
+      "break_fallback": [
+        true,
+        false
+      ],
+      "require_sweep": [
+        false,
+        true
+      ],
+      "space_mult": [
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        4.0
+      ]
+    },
+    "sweep_share": 0.1,
+    "slippage": 0.1,
+    "execution": "RXM-1",
+    "min_train_trades": 150,
+    "min_val_trades": 200,
+    "status": "PROVISIONAL. The Stage 4 parity gate has not passed: TradingView's pivot tie rule is unverified (`strict` assumed) and the data is OANDA, not the BlackBull feed GSE runs on."
+  },
+  "chosen": {
+    "swing_len": 10,
+    "zone_count": 4,
+    "flip_on": true,
+    "cluster_on": true,
+    "cluster_atr": 1.5,
+    "eq_atr": 0.3,
+    "break_fallback": false,
+    "require_sweep": false,
+    "space_mult": 3.0
+  }
+}
