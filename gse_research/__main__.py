@@ -10,6 +10,10 @@
         study O1: TradingView settings for the 15m Golden Zone, written to results/O1/
     python -m gse_research strategy-study [--workers N]
         study O2: GSE Strategy v4.0 swing lookbacks, written to results/O2/
+    python -m gse_research worker [--once] [--poll 10]
+        run jobs queued from the website admin (Research tab)
+    python -m gse_research publish
+        one-off: store the committed results/ as runs for the admin
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import json
 
 import pandas as pd
 
-from . import data, experiments, optimize, quality, strategy_study
+from . import data, experiments, optimize, quality, strategy_study, worker
 
 
 def main() -> None:
@@ -38,6 +42,10 @@ def main() -> None:
     op.add_argument("--workers", type=int, default=None)
     ss = sub.add_parser("strategy-study", help="study O2: GSE Strategy v4.0 lookback grid")
     ss.add_argument("--workers", type=int, default=None)
+    wk = sub.add_parser("worker", help="run jobs queued from the website admin")
+    wk.add_argument("--once", action="store_true", help="exit when the queue is empty")
+    wk.add_argument("--poll", type=float, default=10.0)
+    sub.add_parser("publish", help="store the committed results/ as runs for the admin")
     args = parser.parse_args()
 
     if args.command == "download":
@@ -61,6 +69,10 @@ def main() -> None:
     elif args.command == "strategy-study":
         out = strategy_study.run_study(args.workers)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "worker":
+        worker.run_worker(args.once, args.poll)
+    elif args.command == "publish":
+        print(f"stored {len(worker.publish_committed())} runs")
 
 
 if __name__ == "__main__":

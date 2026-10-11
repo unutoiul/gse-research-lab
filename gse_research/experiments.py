@@ -43,7 +43,7 @@ def _params(cls, overrides: dict):
     return cls(**overrides)
 
 
-def run_r001(period: str, allow_test: bool = False) -> Path:
+def run_r001(period: str, allow_test: bool = False, out_dir: Path | None = None) -> Path:
     study_path = CONFIG / "R001" / "study.json"
     study = json.loads(study_path.read_text())
     if period not in study["periods"]:
@@ -88,7 +88,7 @@ def run_r001(period: str, allow_test: bool = False) -> Path:
     boot = metrics.bootstrap_mean_diff(c0, v1, **{"n": study["bootstrap"]["resamples"], "seed": study["bootstrap"]["seed"],
                                                   "level": study["bootstrap"]["level"]})
 
-    out_dir = ROOT / "results" / "R001" / period
+    out_dir = out_dir or ROOT / "results" / "R001" / period
     out_dir.mkdir(parents=True, exist_ok=True)
     pd.concat(trades.values(), ignore_index=True).to_csv(out_dir / "trades.csv", index=False)
     manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]

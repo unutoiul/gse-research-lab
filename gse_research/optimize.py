@@ -106,10 +106,14 @@ def evaluate(cfg: dict) -> dict:
     return row
 
 
-def _run_all(configs: list[dict], workers: int) -> pd.DataFrame:
+def _run_all(configs: list[dict], workers: int, progress=None) -> pd.DataFrame:
     order = sorted(range(len(configs)), key=lambda i: configs[i]["swing_len"])  # cache locality per worker
+    rows = []
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as pool:
-        rows = list(pool.map(evaluate, [configs[i] for i in order], chunksize=4))
+        for row in pool.map(evaluate, [configs[i] for i in order], chunksize=4):
+            rows.append(row)
+            if progress and len(rows) % 10 == 0:
+                progress(len(rows) / len(configs), f"{len(rows)} / {len(configs)} configurations")
     df = pd.DataFrame(rows)
     df["trial"] = [order[i] for i in range(len(order))]
     return df.sort_values("trial", ignore_index=True)
@@ -127,10 +131,10 @@ def _neighbours(cfg: dict) -> list[dict]:
     return out
 
 
-def run_study(trials: int = 400, seed: int = 20261011, workers: int | None = None) -> Path:
+def run_study(trials: int = 400, seed: int = 20261011, workers: int | None = None, out_dir: Path | None = None, progress=None) -> Path:
     workers = workers or max(1, min(16, (os.cpu_count() or 2) - 2))
     configs = sample_configs(trials, seed)
-    df = _run_all(configs, workers)
+    df = _run_all(configs, workers, progress)
     df["is_default"] = df["trial"] == 0
     eligible = df[df["train_trades"] >= MIN_TRAIN_TRADES].copy()
     top = eligible.sort_values("train_expectancy_R", ascending=False).head(20)
@@ -145,7 +149,7 @@ def run_study(trials: int = 400, seed: int = 20261011, workers: int | None = Non
         sens = _run_all(neigh, workers)
         sens["varied"] = varied
 
-    out_dir = data.ROOT / "results" / "O1"
+    out_dir = out_dir or data.ROOT / "results" / "O1"
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "trials.csv", index=False)
     if len(sens):

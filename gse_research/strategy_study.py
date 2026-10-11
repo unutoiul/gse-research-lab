@@ -65,14 +65,19 @@ def evaluate(cfg: dict) -> dict:
     return row
 
 
-def run_study(workers: int | None = None, extra: list[dict] | None = None, name: str = "O2") -> Path:
+def run_study(workers: int | None = None, extra: list[dict] | None = None, name: str = "O2",
+              out_dir: Path | None = None, progress=None) -> Path:
     workers = workers or max(1, min(16, (os.cpu_count() or 2) - 2))
     configs = extra or [{"swing_len": a, "h4_swing_len": b} for a in GRID for b in GRID]
     configs = sorted(configs, key=lambda c: c["swing_len"])
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as pool:
-        rows = list(pool.map(evaluate, configs, chunksize=2))  # small chunks: no worker is left with a long tail
+        rows = []
+        for row in pool.map(evaluate, configs, chunksize=2):  # small chunks: no worker is left with a long tail
+            rows.append(row)
+            if progress and len(rows) % 5 == 0:
+                progress(len(rows) / len(configs), f"{len(rows)} / {len(configs)} settings")
     df = pd.DataFrame(rows)
-    out_dir = data.ROOT / "results" / name
+    out_dir = out_dir or data.ROOT / "results" / name
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "trials.csv", index=False)
     manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]
