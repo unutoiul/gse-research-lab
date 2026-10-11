@@ -301,13 +301,15 @@ def _pick_obstacle(direction: int, price: float, best: float, candidate: float) 
 
 
 def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams = ContextParams(),
-        prep: pd.DataFrame | None = None, trace: list | None = None) -> tuple[pd.DataFrame, list[dict]]:
+        prep: pd.DataFrame | None = None, trace: list | None = None, hook=None) -> tuple[pd.DataFrame, list[dict]]:
     """Run GSE v4.0 over closed M15 candles.
 
     Returns one row per candle (the indicator's state at that close) and the
     level events (taps and confirmed flips) with their candle index. With
     `trace`, the full level list and equal-high/low pools are appended after
-    every candle (for the Pine oracle comparison).
+    every candle (for the Pine oracle comparison). `hook(t, levels, eqh_pool,
+    eql_pool, pd_h, pd_l, pw_h, pw_l, atr, close)` is called at the end of every
+    candle with the live state (read only), e.g. for the strategy's level picks.
     """
     prep = prepare(m15, core) if prep is None else prep
     O, H, Lo, C = (m15[k].tolist() for k in ("open", "high", "low", "close"))
@@ -660,6 +662,8 @@ def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams =
                  else 3 if sd == 1 and at_sup else 4 if sd == 1 and at_res else 5 if sd == 1
                  else 6 if sd == -1 and at_res else 7 if sd == -1 and at_sup else 8)
 
+        if hook is not None:
+            hook(t, levels, s.eqh_pool, s.eql_pool, pd_h, pd_l, pw_h, pw_l, atr, c)
         if trace is not None:
             trace.append(([(lv.id, lv.price, lv.role, lv.state, lv.touches, lv.wick, lv.born_bar, lv.in_contact)
                            for lv in levels], list(s.eqh_pool), list(s.eql_pool)))

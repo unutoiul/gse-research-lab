@@ -8,6 +8,8 @@
         R001 (Require Sweep off vs on), written to results/R001/<period>/
     python -m gse_research optimize [--trials 400] [--workers N]
         study O1: TradingView settings for the 15m Golden Zone, written to results/O1/
+    python -m gse_research strategy-study [--workers N]
+        study O2: GSE Strategy v4.0 swing lookbacks, written to results/O2/
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import json
 
 import pandas as pd
 
-from . import data, experiments, optimize, quality
+from . import data, experiments, optimize, quality, strategy_study
 
 
 def main() -> None:
@@ -34,6 +36,8 @@ def main() -> None:
     op.add_argument("--trials", type=int, default=400)
     op.add_argument("--seed", type=int, default=20261011)
     op.add_argument("--workers", type=int, default=None)
+    ss = sub.add_parser("strategy-study", help="study O2: GSE Strategy v4.0 lookback grid")
+    ss.add_argument("--workers", type=int, default=None)
     args = parser.parse_args()
 
     if args.command == "download":
@@ -53,6 +57,9 @@ def main() -> None:
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "optimize":
         out = optimize.run_study(args.trials, args.seed, args.workers)
+        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "strategy-study":
+        out = strategy_study.run_study(args.workers)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
 
 
