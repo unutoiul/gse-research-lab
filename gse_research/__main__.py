@@ -10,6 +10,8 @@
         study O1: TradingView settings for the 15m Golden Zone, written to results/O1/
     python -m gse_research strategy-study [--workers N]
         study O2: GSE Strategy v4.0 swing lookbacks, written to results/O2/
+    python -m gse_research targets-study [--workers N]
+        study O3: GSE Strategy v4.0 stop and target constants, written to results/O3/
     python -m gse_research worker [--once] [--poll 60]
         run jobs queued from the website admin (Research tab)
     python -m gse_research publish
@@ -42,6 +44,8 @@ def main() -> None:
     op.add_argument("--workers", type=int, default=None)
     ss = sub.add_parser("strategy-study", help="study O2: GSE Strategy v4.0 lookback grid")
     ss.add_argument("--workers", type=int, default=None)
+    ts = sub.add_parser("targets-study", help="study O3: GSE Strategy v4.0 stop and target constants")
+    ts.add_argument("--workers", type=int, default=None)
     wk = sub.add_parser("worker", help="run jobs queued from the website admin")
     wk.add_argument("--once", action="store_true", help="exit when the queue is empty")
     wk.add_argument("--poll", type=float, default=60.0, help="seconds between queue checks (Neon sleeps only if > its 5-minute window)")
@@ -68,6 +72,9 @@ def main() -> None:
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "strategy-study":
         out = strategy_study.run_study(args.workers)
+        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "targets-study":
+        out = strategy_study.run_targets_study(args.workers)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "worker":
         worker.run_worker(args.once, args.poll)
