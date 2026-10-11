@@ -246,6 +246,22 @@ def _o3_result(out: Path, params: dict, source: str | None = None) -> dict:
             "provenance": _provenance({"source": source} if source else None)}
 
 
+def _t1_result(out: Path, params: dict, source: str | None = None) -> dict:
+    summary = pd.read_csv(out / "summary.csv")
+    trades = pd.read_csv(out / "trades_net.csv", parse_dates=["time", "entry_time", "exit_time"])
+    series = {f"{tf} {p}": equity(trades[(trades["timeframe"] == tf) & (trades["period"] == p)])
+              for tf in ("15m", "1H", "4H") for p in ("train", "validate")}
+    val = summary[summary["period"] == "validate"].set_index("timeframe")
+    cols = ["timeframe", "period", "net_trades", "net_win_rate", "net_expectancy_R", "net_profit_factor", "net_max_drawdown_R",
+            "net_avg_spread_R", "half_expectancy_R", "gross_expectancy_R"]
+    return {"kind": "study_t1", "title": "T1 · Golden Zone entry on 15m, 1H and 4H", "params": params,
+            "summary": clean({f"{tf}_validate_net_R": val.at[tf, "net_expectancy_R"] for tf in val.index}
+                             | {f"{tf}_validate_trades": val.at[tf, "net_trades"] for tf in val.index}),
+            "equity": {"series": series}, "tables": {"Results by timeframe and period": table(summary[cols], index=False)},
+            "report_md": (out / "report.md").read_text(encoding="utf-8"),
+            "provenance": _provenance({"source": source} if source else None)}
+
+
 RUNNERS = {"data_update": run_data_update, "r001": run_r001, "strategy_backtest": run_strategy_backtest,
            "search_o1": run_search_o1, "search_o2": run_search_o2}
 
@@ -262,4 +278,6 @@ def committed_results() -> list[dict]:
         out.append(_o2_result(root / "O2", {}, "results/O2"))
     if (root / "O3" / "trials.csv").exists():
         out.append(_o3_result(root / "O3", {}, "results/O3"))
+    if (root / "T1" / "summary.csv").exists():
+        out.append(_t1_result(root / "T1", {}, "results/T1"))
     return out

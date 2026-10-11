@@ -129,3 +129,12 @@ def test_candidates_are_off_to_on_transitions_and_funnel_counts_first_failure():
     assert f.loc[("long", "direction"), "rejected"] == 1 and f.loc[("long", "location"), "rejected"] == 1
     assert f.loc[("long", "qualified"), "remaining"] == 3
     assert f.loc[("short", "direction"), "rejected"] == 5
+
+
+def test_with_spread_scales_bid_and_ask_toward_mid():
+    from gse_research.timeframes import with_spread
+    df = candles([FLAT, FLAT])
+    half, mid = with_spread(df, 0.5), with_spread(df, 0.0)
+    assert half["ask_open"].iat[0] == pytest.approx(101.0 + SPREAD / 4)
+    assert half["bid_low"].iat[0] == pytest.approx(100.8 - SPREAD / 4)
+    assert (mid["ask_close"] == mid["close"]).all() and (mid["bid_high"] == mid["high"]).all()

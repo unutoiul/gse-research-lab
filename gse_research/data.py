@@ -229,17 +229,17 @@ def aggregate(m15: pd.DataFrame, tf: str) -> pd.DataFrame:
     # Back to UTC through the candle's own offset: no DST change falls inside a session.
     frame = m15.assign(_start=t - (clock - start_clock), _end=t - (clock - end_clock))
     g = frame.groupby("_start", sort=True)
-    out = g.agg(
-        open=("open", "first"),
-        high=("high", "max"),
-        low=("low", "min"),
-        close=("close", "last"),
-        volume=("volume", "sum"),
-        close_time=("_end", "first"),
-        candles=("open", "size"),
-    )
+    spec = {"open": ("open", "first"), "high": ("high", "max"), "low": ("low", "min"), "close": ("close", "last"),
+            "volume": ("volume", "sum"), "close_time": ("_end", "first"), "candles": ("open", "size")}
+    sides = [s for s in ("bid", "ask") if f"{s}_open" in m15]  # bid/ask OHLC too, so trades can fill on this timeframe
+    for s in sides:
+        spec.update({f"{s}_open": (f"{s}_open", "first"), f"{s}_high": (f"{s}_high", "max"),
+                     f"{s}_low": (f"{s}_low", "min"), f"{s}_close": (f"{s}_close", "last")})
+    out = g.agg(**spec)
     out["time"] = out.index
-    return out.reset_index(drop=True)[["time", "close_time", "open", "high", "low", "close", "volume", "candles"]]
+    cols = ["time", "close_time", "open", "high", "low", "close", "volume", "candles"]
+    cols += [f"{s}_{k}" for s in sides for k in ("open", "high", "low", "close")]
+    return out.reset_index(drop=True)[cols]
 
 
 def align(m15: pd.DataFrame, htf: pd.DataFrame, columns: list[str], at: str) -> pd.DataFrame:

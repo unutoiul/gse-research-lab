@@ -145,3 +145,15 @@ def test_align_never_looks_ahead_on_a_long_series(candles):
             later = htf["close_time"].searchsorted(m15[key], side="right") - 1
             expected = htf["time"].reindex(later).where(later >= 0).reset_index(drop=True)
             pd.testing.assert_series_equal(seen["htf_time"].reset_index(drop=True), expected, check_names=False)
+
+
+def test_bid_and_ask_are_aggregated_like_mid(candles):
+    m15 = candles("2026-07-15")
+    h4 = aggregate(m15, "4H")
+    first = m15.iloc[:16]
+    for side in ("bid", "ask"):
+        assert h4[f"{side}_open"].iloc[0] == first[f"{side}_open"].iloc[0]
+        assert h4[f"{side}_high"].iloc[0] == first[f"{side}_high"].max()
+        assert h4[f"{side}_low"].iloc[0] == first[f"{side}_low"].min()
+        assert h4[f"{side}_close"].iloc[0] == first[f"{side}_close"].iloc[-1]
+    assert "bid_open" not in aggregate(m15[["time", "open", "high", "low", "close", "volume"]], "4H")

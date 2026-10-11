@@ -25,7 +25,7 @@ import json
 
 import pandas as pd
 
-from . import data, experiments, optimize, quality, strategy_study, worker
+from . import data, experiments, optimize, quality, strategy_study, timeframes, worker
 
 
 def main() -> None:
@@ -44,6 +44,7 @@ def main() -> None:
     op.add_argument("--workers", type=int, default=None)
     ss = sub.add_parser("strategy-study", help="study O2: GSE Strategy v4.0 lookback grid")
     ss.add_argument("--workers", type=int, default=None)
+    sub.add_parser("timeframes", help="study T1: the Golden Zone entry on 15m, 1H and 4H")
     ts = sub.add_parser("targets-study", help="study O3: GSE Strategy v4.0 stop and target constants")
     ts.add_argument("--workers", type=int, default=None)
     wk = sub.add_parser("worker", help="run jobs queued from the website admin")
@@ -72,6 +73,9 @@ def main() -> None:
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "strategy-study":
         out = strategy_study.run_study(args.workers)
+        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "timeframes":
+        out = timeframes.run_study()
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "targets-study":
         out = strategy_study.run_targets_study(args.workers)
