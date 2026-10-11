@@ -45,3 +45,30 @@ def test_equity_is_cumulative_and_downsampled():
                       "entry_time": pd.date_range("2026-01-01", periods=2000, freq="h", tz="UTC")})
     pts = jobs.equity(t, max_points=100)
     assert len(pts) <= 101 and pts[-1][1] == 0.0 and pts[0][1] == 1.0
+
+
+def test_db_retries_a_dropped_connection_then_gives_up(monkeypatch):
+    import psycopg
+    from gse_research import worker
+
+    calls = {"n": 0}
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def connect():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return Conn()
+
+    monkeypatch.setattr(worker, "_connect", connect)
+    monkeypatch.setattr(worker.time, "sleep", lambda s: None)
+    assert worker.db(lambda c: "ok") == "ok" and calls["n"] == 3
+    calls["n"] = -100
+    with pytest.raises(psycopg.OperationalError):
+        worker.db(lambda c: "never", retries=2)

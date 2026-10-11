@@ -10,7 +10,7 @@
         study O1: TradingView settings for the 15m Golden Zone, written to results/O1/
     python -m gse_research strategy-study [--workers N]
         study O2: GSE Strategy v4.0 swing lookbacks, written to results/O2/
-    python -m gse_research worker [--once] [--poll 10]
+    python -m gse_research worker [--once] [--poll 60]
         run jobs queued from the website admin (Research tab)
     python -m gse_research publish
         one-off: store the committed results/ as runs for the admin
@@ -44,7 +44,7 @@ def main() -> None:
     ss.add_argument("--workers", type=int, default=None)
     wk = sub.add_parser("worker", help="run jobs queued from the website admin")
     wk.add_argument("--once", action="store_true", help="exit when the queue is empty")
-    wk.add_argument("--poll", type=float, default=10.0)
+    wk.add_argument("--poll", type=float, default=60.0, help="seconds between queue checks (Neon sleeps only if > its 5-minute window)")
     sub.add_parser("publish", help="store the committed results/ as runs for the admin")
     args = parser.parse_args()
 

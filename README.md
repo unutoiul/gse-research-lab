@@ -48,6 +48,7 @@ The website admin (`/admin/research`) queues jobs and shows their results. The j
 ```
 
 - The worker connects with `RESEARCH_DATABASE_URL` in `.env`: a database login limited to the three research tables (`research_jobs`, `research_runs`, `research_state`; schema in gse-website `sql/research.sql`).
-- It claims queued jobs one at a time, reports progress, stores each result (summary, equity curve, tables, report, provenance) and sends a heartbeat every 20 seconds. The admin shows it offline after 90 seconds without one.
+- It checks the queue every 60 seconds (`--poll`), claims jobs one at a time, reports progress and stores each result (summary, equity curve, tables, report, provenance). Each check is also a heartbeat: the admin shows the worker offline after three missed checks. No database connection is held while idle, and a dropped connection is retried.
+- Database cost: Neon suspends its compute only after 5 minutes without any query, so a poll shorter than that keeps the database awake while the worker runs. Use `--poll 360` to let it sleep between checks (jobs then start within about 6 minutes).
 - Job files go to `out/jobs/<job id>/` (git-ignored). Job parameters are validated in `gse_research/jobs.py`; the website mirrors the rules in `src/types/research.ts`.
 - The locked test period (2023+) is never accepted from the admin: it stays `r001 --period test --allow-test`.
