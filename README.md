@@ -37,3 +37,17 @@ OANDA_ENV=practice
 .venv\Scripts\python -m gse_research optimize  # study O1: settings search, results/O1/ (about 15 minutes)
 .venv\Scripts\python -m pytest
 ```
+
+## Admin Research tab and the worker
+
+The website admin (`/admin/research`) queues jobs and shows their results. The jobs run here, in the research worker, not on the website:
+
+```powershell
+.\worker.cmd                                      # or: .venv\Scripts\python -m gse_research worker
+.venv\Scripts\python -m gse_research publish     # one-off: store results/ for the admin
+```
+
+- The worker connects with `RESEARCH_DATABASE_URL` in `.env`: a database login limited to the three research tables (`research_jobs`, `research_runs`, `research_state`; schema in gse-website `sql/research.sql`).
+- It claims queued jobs one at a time, reports progress, stores each result (summary, equity curve, tables, report, provenance) and sends a heartbeat every 20 seconds. The admin shows it offline after 90 seconds without one.
+- Job files go to `out/jobs/<job id>/` (git-ignored). Job parameters are validated in `gse_research/jobs.py`; the website mirrors the rules in `src/types/research.ts`.
+- The locked test period (2023+) is never accepted from the admin: it stays `r001 --period test --allow-test`.
