@@ -370,12 +370,15 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
                             fill, seg_start = L, i - 1
                             break
                 if fill is not None:
-                    risk = d * (fill - pending["stop"])
-                    pos = {**pending, "fill": fill, "fill_bar": t, "fill_time": m15["time"].iat[t], "risk": risk,
-                           "best": 0.0, "worst": 0.0}
+                    # R is measured against the PLANNED risk (limit to stop, always > 0), the unit a trader
+                    # sizes with. A gap fill can make the actual risk smaller, or nil.
+                    planned = d * (pending["entry"] - pending["stop"])
+                    fill_risk = d * (fill - pending["stop"])
+                    pos = {**pending, "fill": fill, "fill_bar": t, "fill_time": m15["time"].iat[t], "risk": planned,
+                           "fill_risk": fill_risk, "best": 0.0, "worst": 0.0}
                     pending = None
                     counts["filled"] += 1
-                    if risk <= 0:  # filled beyond its own stop (a gap): out at once
+                    if fill_risk <= 0:  # filled at or beyond its own stop (a gap): out at once
                         exit_trade(t, ext["open"][t] - d * slip, "stop_gap")
                         pos, closed_this_bar = None, True
             if pos is not None:

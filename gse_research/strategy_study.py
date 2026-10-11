@@ -70,7 +70,7 @@ def run_study(workers: int | None = None, extra: list[dict] | None = None, name:
     configs = extra or [{"swing_len": a, "h4_swing_len": b} for a in GRID for b in GRID]
     configs = sorted(configs, key=lambda c: c["swing_len"])
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as pool:
-        rows = list(pool.map(evaluate, configs, chunksize=len(GRID)))
+        rows = list(pool.map(evaluate, configs, chunksize=2))  # small chunks: no worker is left with a long tail
     df = pd.DataFrame(rows)
     out_dir = data.ROOT / "results" / name
     out_dir.mkdir(parents=True, exist_ok=True)

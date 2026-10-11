@@ -184,3 +184,14 @@ def test_signals_do_not_look_ahead():
     part = st.signals(part_m15)
     pd.testing.assert_frame_equal(part, full.iloc[: len(part)].reset_index(drop=True))
     assert full["signal"].sum() > 0
+
+
+def test_a_gap_fill_at_the_stop_is_a_kept_loss_not_a_dropped_trade():
+    # The candle after submission opens exactly at the stop (99.0 + spread), below the 100 limit.
+    rows = [FLAT, (98.9, 99.0, 98.5, 98.8)] + [FLAT] * 3
+    trades, counts = st.simulate(_frame(rows), _sig(5, until=1), "2026-03-01", "2026-04-01", st.Broker(slippage=0.0))
+    assert counts["filled"] == 1 and len(trades) == 1
+    t = trades.iloc[0]
+    # Bought at the 99.0 ask open (better than the 100 limit), sold at the 98.8 bid: -0.2 on a planned risk of 1.0.
+    assert t["reason"] == "stop_gap" and t["fill"] == pytest.approx(99.0) and t["R"] == pytest.approx(-0.2)
+    assert t["risk"] == pytest.approx(1.0) and t["fill_risk"] == pytest.approx(0.0)
