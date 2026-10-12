@@ -62,20 +62,25 @@ def _fetch_page(session: requests.Session, granularity: str, start: pd.Timestamp
         "count": 5000,
     }
     url = f"{_host()}/v3/instruments/{INSTRUMENT}/candles"
+    last = "no answer"
     for attempt in range(5):
         try:
             res = session.get(url, params=params, headers={"Authorization": f"Bearer {token}"}, timeout=30)
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            last = type(exc).__name__
             time.sleep(2 * (attempt + 1))
             continue
         if res.ok:
             break
-        if res.status_code == 429 or res.status_code >= 500:
+        # OANDA sometimes refuses a valid token for a moment (401 mid-download, seen while two
+        # GitHub runs downloaded at once), so 401 is retried too; a wrong token still fails.
+        if res.status_code in (401, 429) or res.status_code >= 500:
+            last = f"{res.status_code}: {res.text}"
             time.sleep(2 * (attempt + 1))
             continue
         raise SystemExit(f"OANDA {res.status_code}: {res.text}")
     else:
-        raise SystemExit("OANDA kept failing; try again later")
+        raise SystemExit(f"OANDA kept failing ({last}); try again later")
     rows = [
         (
             c["time"],

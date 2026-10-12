@@ -157,3 +157,28 @@ def test_bid_and_ask_are_aggregated_like_mid(candles):
         assert h4[f"{side}_low"].iloc[0] == first[f"{side}_low"].min()
         assert h4[f"{side}_close"].iloc[0] == first[f"{side}_close"].iloc[-1]
     assert "bid_open" not in aggregate(m15[["time", "open", "high", "low", "close", "volume"]], "4H")
+
+
+def test_oanda_401_is_retried_but_a_lasting_one_fails(monkeypatch):
+    from gse_research import data
+
+    replies = []
+
+    class Reply:
+        def __init__(self, code):
+            self.status_code, self.ok, self.text = code, code == 200, "refused"
+
+        def json(self):
+            return {"candles": []}
+
+    class Session:
+        def get(self, *a, **k):
+            return Reply(replies.pop(0))
+
+    monkeypatch.setenv("OANDA_API_TOKEN", "test")
+    monkeypatch.setattr(data.time, "sleep", lambda s: None)
+    replies[:] = [401, 401, 200]
+    assert data._fetch_page(Session(), "M15", pd.Timestamp("2020-01-01", tz="UTC")).empty
+    replies[:] = [401] * 5
+    with pytest.raises(SystemExit, match="OANDA kept failing \(401: refused\)"):
+        data._fetch_page(Session(), "M15", pd.Timestamp("2020-01-01", tz="UTC"))
