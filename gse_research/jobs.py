@@ -27,6 +27,7 @@ from . import data, experiments, metrics, optimize, quality, signals, strategy, 
 
 PERIODS = {"train": ("2016-01-01", "2019-01-01"), "validate": ("2019-01-01", "2023-01-01")}
 WARMUP = "2015-10-01"
+D1_WARMUP = "2015-01-01"  # daily bias: EMA50 and pivots need months of days before 2016
 COSTS = {"net": strategy.Broker(slippage=0.10, spread_scale=1.0), "half": strategy.Broker(slippage=0.05, spread_scale=0.5),
          "gross": strategy.Broker(slippage=0.0, spread_scale=0.0)}
 COST_LABELS = {"gross": "before costs (mid prices)", "half": "half spread + 0.05", "net": "OANDA spread + 0.10"}
@@ -41,10 +42,11 @@ SCHEMA = {
         {"swing_len": [3, 50], "h4_swing_len": [3, 50], "period": ("train", "validate"), "costs": tuple(COSTS),
          "path": ("conservative", "tradingview"), "stop_buffer_atr": {"float": [0.05, 3.0]},
          "min_r": {"float": [0.5, 5.0]}, "max_atr": {"float": [1.0, 20.0]},
-         "h4_mode": ("with", "against"), "stop_usd": {"float": [0.0, 200.0]}, "stop_atr": {"float": [0.0, 20.0]}},
+         "h4_mode": ("with", "against"), "stop_usd": {"float": [0.0, 200.0]}, "stop_atr": {"float": [0.0, 20.0]},
+         "chart_tf": ("15m", "1H"), "d1_mode": ("off", "with", "against")},
         {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net", "path": "conservative",
          "stop_buffer_atr": strategy.STOP_BUFFER_ATR, "min_r": strategy.MIN_R, "max_atr": strategy.MAX_ATR,
-         "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0}),
+         "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0, "chart_tf": "15m", "d1_mode": "off"}),
     "search_o1": ({"trials": [20, 400]}, {"trials": 400}),
     "search_o2": ({}, {}),
     "search_o3": ({}, {}),
@@ -151,8 +153,14 @@ def diagnose(trades: pd.DataFrame, cost_levels: dict[str, float] | None = None, 
         values = [v for v in cost_levels.values() if v is not None and not np.isnan(v)]
         if len(values) >= 2:
             first, last = list(cost_levels.items())[0], list(cost_levels.items())[-1]
-            notes.append(f"Costs take {first[1] - last[1]:.2f} R per trade: {first[1]:+.2f} R {first[0]}, "
-                         f"{last[1]:+.2f} R {last[0]}.")
+            if first[1] >= last[1]:
+                notes.append(f"Costs take {first[1] - last[1]:.2f} R per trade: {first[1]:+.2f} R {first[0]}, "
+                             f"{last[1]:+.2f} R {last[0]}.")
+            else:
+                # Each cost level fills differently, so it can end up with other trades; on a small
+                # sample that difference outweighs the costs.
+                notes.append(f"{last[0]} ({last[1]:+.2f} R) beats {first[0]} ({first[1]:+.2f} R): the cost levels "
+                             "filled different trades, and on this sample chance outweighs the costs.")
             if first_is_gross and not first[1] > 0:
                 notes.append("Even before costs the trades lose on average: the entry signal itself shows no edge here.")
     if funnel is not None and len(funnel):
@@ -280,17 +288,22 @@ STRATEGY_TRADE_COLS = ["signal_time", "fill_time", "side", "entry", "fill", "sto
 def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, None]:
     a, b = PERIODS[params["period"]]
     progress(0.05, "loading candles")
-    m15 = data.load("M15", start=WARMUP, end=str((pd.Timestamp(b) + pd.Timedelta(days=2)).date()))
-    progress(0.15, "levels, 1H/4H snapshots and signals")
+    end = str((pd.Timestamp(b) + pd.Timedelta(days=2)).date())
+    m15 = data.load("M15", start=D1_WARMUP if params["d1_mode"] != "off" else WARMUP, end=end)
     p = strategy.StrategyParams(swing_len=params["swing_len"], h4_swing_len=params["h4_swing_len"],
                                 stop_buffer_atr=params["stop_buffer_atr"], min_r=params["min_r"], max_atr=params["max_atr"],
-                                h4_mode=params["h4_mode"], stop_usd=params["stop_usd"], stop_atr=params["stop_atr"])
-    sig = strategy.signals(m15, p)
+                                h4_mode=params["h4_mode"], stop_usd=params["stop_usd"], stop_atr=params["stop_atr"],
+                                d1_mode=params["d1_mode"])
+    history, m15 = m15, m15[m15["time"] >= pd.Timestamp(WARMUP, tz="UTC")].reset_index(drop=True)
+    chart = m15 if params["chart_tf"] == "15m" else data.aggregate(m15, params["chart_tf"])
+    progress(0.15, f"{params['chart_tf']} levels, 1H/4H snapshots and signals")
+    d1 = strategy.d1_inputs(chart, p, history) if p.d1_mode != "off" else None
+    sig = strategy.signals(chart, p, d1=d1)
     progress(0.85, "simulating orders at three cost levels")
     weeks = (pd.Timestamp(b) - pd.Timestamp(a)).days / 7
     runs = {}
     for cost, base in COSTS.items():
-        trades, counts = strategy.simulate(m15, sig, a, b, strategy.Broker(path=params["path"], slippage=base.slippage,
+        trades, counts = strategy.simulate(chart, sig, a, b, strategy.Broker(path=params["path"], slippage=base.slippage,
                                                                             spread_scale=base.spread_scale))
         if len(trades):
             trades["session"] = session_of(trades["fill_time"])
@@ -301,7 +314,7 @@ def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, Non
     summary = metrics.summarize(trades, weeks)
     ci = metrics.bootstrap_mean(trades)
     v = metrics.verdict(summary, ci["low"], in_sample=params["period"] == "train")
-    in_period = m15["close_time"].between(pd.Timestamp(a, tz="UTC"), pd.Timestamp(b, tz="UTC"), inclusive="left")
+    in_period = chart["close_time"].between(pd.Timestamp(a, tz="UTC"), pd.Timestamp(b, tz="UTC"), inclusive="left")
     reasons = sig.loc[in_period, "reason"].value_counts().rename("candles").to_frame()
     reasons["share"] = reasons["candles"] / reasons["candles"].sum()
     reasons.index.name = "candle state"
@@ -311,7 +324,8 @@ def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, Non
               "trades": trade_table(trades, STRATEGY_TRADE_COLS)}
     stop = (f"stop ${p.stop_usd:g}" if p.stop_usd > 0 else f"stop {p.stop_atr:g} ATR" if p.stop_atr > 0
             else f"stop +{p.stop_buffer_atr:g} ATR")
-    title = (f"Strategy v4.0 · chart {p.swing_len} / H4 {p.h4_swing_len} · {p.h4_mode} 4H · {stop}, "
+    d1_text = f" · {p.d1_mode} 1D" if p.d1_mode != "off" else ""
+    title = (f"Strategy v4.0 · {params['chart_tf']} chart {p.swing_len} / H4 {p.h4_swing_len} · {p.h4_mode} 4H{d1_text} · {stop}, "
              f"≥{p.min_r:g}R, ≤{p.max_atr:g} ATR · {params['period']} · {params['costs']}")
     report = "\n".join([f"# {title}", "", f"> {experiments.PROVISIONAL}", "",
                         f"**{v['label']}**: " + "; ".join(v["reasons"]) + ".", "",

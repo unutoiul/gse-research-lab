@@ -235,3 +235,32 @@ def test_an_atr_stop_scales_with_the_atr_and_a_dollar_stop_wins_if_both_are_set(
     assert st.StrategyParams(stop_atr=2.5).stop_distance(4.0) == pytest.approx(10.0)
     assert st.StrategyParams(stop_usd=20.0).stop_distance(4.0) == 20.0
     assert st.StrategyParams().stop_distance(4.0) == 0.0
+
+
+@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
+def test_1d_filter_keeps_only_trades_whose_direction_matches_the_mode():
+    m15 = data.load("M15", start="2023-09-01", end="2024-03-01")
+    p = st.StrategyParams(h4_mode="against", stop_atr=2.6)
+    d1 = st.d1_inputs(m15, p)
+    assert not np.isnan(d1[-1000:]).any()
+    base = st.signals(m15, p)
+    for mode, want in (("with", 1), ("against", -1)):
+        sig = st.signals(m15, st.StrategyParams(h4_mode="against", stop_atr=2.6, d1_mode=mode), d1=d1)
+        live = sig[sig["signal"]]
+        assert len(live) > 0 and (np.sign(live["d1"].astype(float)) == want * live["dir"]).all()
+        # The filter only removes candles: every signal it keeps is a signal without it.
+        assert base.loc[live.index, "signal"].all()
+        assert (sig["reason"] == "d1_context").any()
+    assert (base["reason"] != "d1_context").all() and base["d1"].isna().all()
+
+
+@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
+def test_1h_chart_signals_do_not_look_ahead_and_fill_on_1h_candles():
+    h1 = data.aggregate(data.load("M15", start="2023-09-01", end="2024-03-01"), "1H")
+    p = st.StrategyParams(h4_mode="against", stop_atr=1.3)
+    full = st.signals(h1, p)
+    part_h1 = h1[h1["time"] < pd.Timestamp("2024-02-10 07:00", tz="UTC")].reset_index(drop=True)
+    pd.testing.assert_frame_equal(st.signals(part_h1, p), full.iloc[: len(part_h1)].reset_index(drop=True))
+    assert full["signal"].sum() > 0
+    trades, counts = st.simulate(h1, full, "2023-11-01", "2024-03-01")
+    assert counts["filled"] > 0 and trades["fill_time"].dt.minute.eq(0).all()

@@ -45,7 +45,8 @@ class StrategyParams:
     # Research variants, not in the Pine source (the defaults are the Pine behaviour).
     h4_mode: str = "with"    # "against": sell fresh resistance when 4H is up, buy fresh support when it is down
     stop_usd: float = 0.0    # > 0: fixed stop this many dollars from the entry instead of the structural stop
-    stop_atr: float = 0.0    # > 0: fixed stop this many 15m ATRs from the entry (scales with gold's price)
+    stop_atr: float = 0.0    # > 0: fixed stop this many chart ATRs from the entry (scales with gold's price)
+    d1_mode: str = "off"     # "with" / "against": trade only when GSE's 1D bias agrees with / opposes the trade
 
     def stop_distance(self, atr: float) -> float:
         """Fixed stop distance from the entry, or 0 for the Pine structural stop."""
@@ -268,17 +269,32 @@ def h4_inputs(m15: pd.DataFrame, p: StrategyParams) -> tuple:
             _ms(seen["htf_close_time"].fillna(pd.Timestamp(0, tz="UTC"))), seen["dir"].to_numpy())
 
 
-def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple | None = None, h4: tuple | None = None) -> pd.DataFrame:
-    """For every 15m close: trade direction, the picked level and its frozen plan, or why there is none.
+def d1_inputs(chart: pd.DataFrame, p: StrategyParams, history: pd.DataFrame | None = None) -> np.ndarray:
+    """GSE's 1D bias score (f_bias_score, chart swing lookback) as each chart candle sees it at its close:
+    closed days only, the day that closes with the candle included (mtf.pine f_mtf_score).
 
-    `dir` is the trade direction (the H4 direction, or its opposite when h4_mode is "against");
-    `h4_dir` is the H4 direction itself."""
+    `history` (M15 from further back) gives the daily EMA50 and pivots time to settle."""
+    d1 = aggregate(chart if history is None else history, "1D")
+    d1 = d1.assign(score=structure.bias_scores(d1, p.core(p.swing_len)))
+    return align(chart, d1, ["score"], at="close")["score"].to_numpy(float)
+
+
+def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple | None = None, h4: tuple | None = None,
+            d1: np.ndarray | None = None) -> pd.DataFrame:
+    """For every chart close: trade direction, the picked level and its frozen plan, or why there is none.
+
+    The chart is the 15m frame of the Pine strategy, or a 1H frame (research variant: the Pine
+    strategy trades only on 15m). `dir` is the trade direction (the H4 direction, or its opposite
+    when h4_mode is "against"); `h4_dir` is the H4 direction itself; `d1` the 1D bias when used."""
     h1_pk, h1_idx, h1_close = h1 if h1 is not None else h1_inputs(m15, p)
     h4_pk, h4_idx, h4_close, dir_seen = h4 if h4 is not None else h4_inputs(m15, p)
     decision = _ms(m15["close_time"])
     n = len(m15)
-    cols = {k: [None] * n for k in ("dir", "h4_dir", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason")}
+    cols = {k: [None] * n for k in ("dir", "h4_dir", "d1", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason")}
     flip = {"with": 1, "against": -1}[p.h4_mode]
+    d1_want = {"off": 0, "with": 1, "against": -1}[p.d1_mode]
+    if d1_want and d1 is None:
+        d1 = d1_inputs(m15, p)
 
     def hook(t, levels, eqh, eql, pdh, pdl, pwh, pwl, atr, c):
         h4 = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
@@ -292,6 +308,11 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
         if d == 0:
             cols["reason"][t] = "no_h4_direction"
             return
+        if d1_want:
+            cols["d1"][t] = d1[t]
+            if isna(d1[t]) or np.sign(d1[t]) != d * d1_want:  # a neutral (0) day trades neither way
+                cols["reason"][t] = "d1_context"
+                return
         lv = touch_pick(levels, d, c)
         if lv is None:
             cols["reason"][t] = "no_fresh_level"

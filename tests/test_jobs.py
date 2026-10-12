@@ -12,7 +12,8 @@ from gse_research import jobs
 def test_defaults_and_valid_parameters():
     assert jobs.validate("strategy_backtest", {}) == {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net",
                                                       "path": "conservative", "stop_buffer_atr": 0.2, "min_r": 1.5, "max_atr": 8.0,
-                                                      "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0}
+                                                      "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0,
+                                                      "chart_tf": "15m", "d1_mode": "off"}
     assert jobs.validate("strategy_backtest", {"h4_mode": "against", "stop_usd": 20})["stop_usd"] == 20.0
     assert jobs.validate("strategy_backtest", {"stop_buffer_atr": 1, "min_r": 1.0})["stop_buffer_atr"] == 1.0
     assert jobs.validate("strategy_backtest", {"swing_len": 7, "period": "validate", "costs": "half"})["swing_len"] == 7
@@ -38,6 +39,8 @@ def test_defaults_and_valid_parameters():
     ("strategy_backtest", {"stop_usd": -5}),
     ("strategy_backtest", {"stop_usd": 500}),
     ("strategy_backtest", {"stop_usd": 20, "stop_atr": 2.6}),  # one fixed stop at a time
+    ("strategy_backtest", {"chart_tf": "4H"}),
+    ("strategy_backtest", {"d1_mode": "sometimes"}),
     ("search_o3", {"anything": 1}),
     ("delete_everything", {}),
 ])
@@ -110,3 +113,11 @@ def test_abandon_job_only_fails_a_job_still_queued_or_running(monkeypatch):
     sql, params = seen[0]
     assert "status in ('queued', 'running')" in sql and "status = 'failed'" in sql
     assert params == ("still running when the run stopped", "github:owner/lab/42", "job-1")
+
+
+def test_cost_note_does_not_call_chance_a_cost():
+    empty = pd.DataFrame()
+    dear = jobs.diagnose(empty, {"before costs": -0.10, "net": -0.34}, None, first_is_gross=True)["notes"]
+    assert dear[0].startswith("Costs take 0.24 R per trade") and "no edge" in dear[1]
+    odd = jobs.diagnose(empty, {"before costs": -0.28, "net": -0.18}, None, first_is_gross=True)["notes"]
+    assert "chance outweighs the costs" in odd[0] and not odd[0].startswith("Costs take")
