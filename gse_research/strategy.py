@@ -42,6 +42,14 @@ class StrategyParams:
     stop_buffer_atr: float = STOP_BUFFER_ATR
     min_r: float = MIN_R
     max_atr: float = MAX_ATR
+    # Research variants, not in the Pine source (the defaults are the Pine behaviour).
+    h4_mode: str = "with"    # "against": sell fresh resistance when 4H is up, buy fresh support when it is down
+    stop_usd: float = 0.0    # > 0: fixed stop this many dollars from the entry instead of the structural stop
+    stop_atr: float = 0.0    # > 0: fixed stop this many 15m ATRs from the entry (scales with gold's price)
+
+    def stop_distance(self, atr: float) -> float:
+        """Fixed stop distance from the entry, or 0 for the Pine structural stop."""
+        return self.stop_usd if self.stop_usd > 0 else self.stop_atr * atr if self.stop_atr > 0 else 0.0
 
     def core(self, swing_len: int) -> structure.CoreParams:
         # strategy-inputs.pine constants: zone_count 8, flips on (35%, 20 bars), merging off, EQ 0.15 ATR.
@@ -77,7 +85,8 @@ def fresh_h4(h4: pd.DataFrame, swing_len: int, ties: str = "strict") -> np.ndarr
 
 
 def touch_pick(levels, h4_dir: int, bar_close: float):
-    """f_touch_pick (strategy-helpers.pine:26-34): nearest fresh, untouched, not-in-contact level on the H4 side."""
+    """f_touch_pick (strategy-helpers.pine:26-34): nearest fresh, untouched, not-in-contact level on the
+    trade side (support for a long, resistance for a short; in the Pine the trade side is the H4 side)."""
     best = None
     for lv in levels:
         if lv.state == ST_FRESH and lv.touches == 0 and not lv.in_contact and lv.role == h4_dir and lv.role * (bar_close - lv.price) > 0:
@@ -177,15 +186,22 @@ def target_candidates(raw: list, d: int, entry: float, risk: float, atr: float, 
 
 
 def structure_targets(raw: list, d: int, entry: float, wick: float, atr: float, tick: float,
-                      stop_buffer_atr: float = STOP_BUFFER_ATR, min_r: float = MIN_R, max_atr: float = MAX_ATR) -> dict:
-    """f_structure_targets: stop, TP1/TP2/TP3 and the rejection reason ("" when TP2 exists)."""
+                      stop_buffer_atr: float = STOP_BUFFER_ATR, min_r: float = MIN_R, max_atr: float = MAX_ATR,
+                      stop_distance: float = 0.0) -> dict:
+    """f_structure_targets: stop, TP1/TP2/TP3 and the rejection reason ("" when TP2 exists).
+
+    stop_distance > 0 (research variant) puts the stop that far from the entry instead of
+    beyond the level's wick; targets are then measured against that risk."""
     plan = {"stop": math.nan, "tp1": math.nan, "tp2": math.nan, "tp3": math.nan, "reason": ""}
     valid = lambda x: not isna(x) and 0 < x < 1e9
     if not valid(wick) or not valid(atr) or not valid(tick):
         plan["reason"] = "missing_invalidation"
         return plan
     invalidation = min(entry, wick) if d == 1 else max(entry, wick)
-    plan["stop"] = target_round(invalidation - d * max(tick, atr * stop_buffer_atr), tick, d)
+    if stop_distance > 0:
+        plan["stop"] = target_round(entry - d * stop_distance, tick, d)
+    else:
+        plan["stop"] = target_round(invalidation - d * max(tick, atr * stop_buffer_atr), tick, d)
     risk = d * (entry - plan["stop"])
     if not valid(plan["stop"]) or not valid(risk):
         plan["reason"] = "missing_invalidation"
@@ -253,16 +269,21 @@ def h4_inputs(m15: pd.DataFrame, p: StrategyParams) -> tuple:
 
 
 def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple | None = None, h4: tuple | None = None) -> pd.DataFrame:
-    """For every 15m close: H4 direction, the picked level and its frozen plan, or why there is none."""
+    """For every 15m close: trade direction, the picked level and its frozen plan, or why there is none.
+
+    `dir` is the trade direction (the H4 direction, or its opposite when h4_mode is "against");
+    `h4_dir` is the H4 direction itself."""
     h1_pk, h1_idx, h1_close = h1 if h1 is not None else h1_inputs(m15, p)
     h4_pk, h4_idx, h4_close, dir_seen = h4 if h4 is not None else h4_inputs(m15, p)
     decision = _ms(m15["close_time"])
     n = len(m15)
-    cols = {k: [None] * n for k in ("dir", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason")}
+    cols = {k: [None] * n for k in ("dir", "h4_dir", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason")}
+    flip = {"with": 1, "against": -1}[p.h4_mode]
 
     def hook(t, levels, eqh, eql, pdh, pdl, pwh, pwl, atr, c):
-        d = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
-        cols["dir"][t] = d
+        h4 = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
+        d = h4 * flip
+        cols["dir"][t], cols["h4_dir"][t] = d, h4
         h1_ok = not isna(h1_idx[t]) and snapshot_valid(1, h1_close[t], decision[t])
         h4_ok = not isna(h4_idx[t]) and snapshot_valid(2, h4_close[t], decision[t])
         if not (h1_ok and h4_ok):
@@ -279,7 +300,8 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
         unpack(raw, packet(levels, eqh, eql, pdh, pdl, pwh, pwl, p.tick), 0, decision[t], decision[t], d, lv.price)
         unpack(raw, h1_pk[int(h1_idx[t])], 1, h1_close[t], decision[t], d, lv.price)
         unpack(raw, h4_pk[int(h4_idx[t])], 2, h4_close[t], decision[t], d, lv.price)
-        plan = structure_targets(raw, d, lv.price, lv.wick, atr, p.tick, p.stop_buffer_atr, p.min_r, p.max_atr)
+        plan = structure_targets(raw, d, lv.price, lv.wick, atr, p.tick, p.stop_buffer_atr, p.min_r, p.max_atr,
+                                 p.stop_distance(atr) if not isna(atr) else 0.0)
         cols["level_id"][t], cols["entry"][t], cols["wick"][t] = lv.id, lv.price, lv.wick
         for k in ("stop", "tp1", "tp2", "tp3"):
             cols[k][t] = plan[k]

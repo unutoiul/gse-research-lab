@@ -11,7 +11,9 @@ from gse_research import jobs
 
 def test_defaults_and_valid_parameters():
     assert jobs.validate("strategy_backtest", {}) == {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net",
-                                                      "path": "conservative", "stop_buffer_atr": 0.2, "min_r": 1.5, "max_atr": 8.0}
+                                                      "path": "conservative", "stop_buffer_atr": 0.2, "min_r": 1.5, "max_atr": 8.0,
+                                                      "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0}
+    assert jobs.validate("strategy_backtest", {"h4_mode": "against", "stop_usd": 20})["stop_usd"] == 20.0
     assert jobs.validate("strategy_backtest", {"stop_buffer_atr": 1, "min_r": 1.0})["stop_buffer_atr"] == 1.0
     assert jobs.validate("strategy_backtest", {"swing_len": 7, "period": "validate", "costs": "half"})["swing_len"] == 7
     assert jobs.validate("r001", {"period": "validate"}) == {"period": "validate"}
@@ -32,6 +34,10 @@ def test_defaults_and_valid_parameters():
     ("strategy_backtest", {"stop_buffer_atr": 0.0}),
     ("strategy_backtest", {"max_atr": "8"}),
     ("strategy_backtest", {"min_r": True}),
+    ("strategy_backtest", {"h4_mode": "sideways"}),
+    ("strategy_backtest", {"stop_usd": -5}),
+    ("strategy_backtest", {"stop_usd": 500}),
+    ("strategy_backtest", {"stop_usd": 20, "stop_atr": 2.6}),  # one fixed stop at a time
     ("search_o3", {"anything": 1}),
     ("delete_everything", {}),
 ])

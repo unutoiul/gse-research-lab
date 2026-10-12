@@ -195,3 +195,43 @@ def test_a_gap_fill_at_the_stop_is_a_kept_loss_not_a_dropped_trade():
     # Bought at the 99.0 ask open (better than the 100 limit), sold at the 98.8 bid: -0.2 on a planned risk of 1.0.
     assert t["reason"] == "stop_gap" and t["fill"] == pytest.approx(99.0) and t["R"] == pytest.approx(-0.2)
     assert t["risk"] == pytest.approx(1.0) and t["fill_risk"] == pytest.approx(0.0)
+
+
+def test_a_fixed_dollar_stop_replaces_the_structural_stop_and_sets_the_risk():
+    # Long from 100 with the wick at 99: structural stop 99 - 0.2 ATR; a fixed $20 stop sits at 80.
+    raw: list = []
+    st.target_add(raw, 1, 100.0, 150.0, 60, True, 1)
+    structural = st.structure_targets(raw, 1, 100.0, 99.0, 5.0, 0.01, max_atr=20)
+    fixed = st.structure_targets(raw, 1, 100.0, 99.0, 5.0, 0.01, max_atr=20, stop_distance=20.0)
+    assert structural["stop"] == pytest.approx(98.0) and fixed["stop"] == pytest.approx(80.0)
+    assert fixed["tp2"] == structural["tp2"] and fixed["reason"] == ""
+    # The target must still be min_r away from the wider risk: 1.5 x $20 = $30.
+    raw_near: list = []
+    st.target_add(raw_near, 1, 100.0, 120.0, 60, True, 1)
+    assert st.structure_targets(raw_near, 1, 100.0, 99.0, 5.0, 0.01, max_atr=20, stop_distance=20.0)["reason"] == "insufficient_room"
+    # Short: the stop is above the entry.
+    raw_short: list = []
+    st.target_add(raw_short, -1, 100.0, 50.0, 60, True, 1)
+    assert st.structure_targets(raw_short, -1, 100.0, 101.0, 5.0, 0.01, max_atr=20, stop_distance=20.0)["stop"] == pytest.approx(120.0)
+
+
+@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
+def test_against_mode_trades_the_opposite_side_of_the_h4_direction():
+    m15 = data.load("M15", start="2024-01-01", end="2024-03-01")
+    with_h4 = st.signals(m15)
+    # A $20 stop needs targets at least $30 away: the 8 ATR cap would reject almost every one on 15m.
+    against = st.signals(m15, st.StrategyParams(h4_mode="against", stop_usd=20.0, max_atr=20.0))
+    assert (with_h4["h4_dir"] == against["h4_dir"]).all()
+    assert (with_h4["dir"] == with_h4["h4_dir"]).all() and (against["dir"] == -against["h4_dir"]).all()
+    sig = against[against["signal"]]
+    assert len(sig) > 0
+    # Longs buy support below the close, shorts sell resistance above it; the stop is $20 away.
+    assert np.allclose(sig["dir"] * (sig["entry"] - sig["stop"]), 20.0, atol=0.011)
+    close = m15.loc[sig.index, "close"]
+    assert (sig["dir"] * (close - sig["entry"]) > 0).all()
+
+
+def test_an_atr_stop_scales_with_the_atr_and_a_dollar_stop_wins_if_both_are_set():
+    assert st.StrategyParams(stop_atr=2.5).stop_distance(4.0) == pytest.approx(10.0)
+    assert st.StrategyParams(stop_usd=20.0).stop_distance(4.0) == 20.0
+    assert st.StrategyParams().stop_distance(4.0) == 0.0
