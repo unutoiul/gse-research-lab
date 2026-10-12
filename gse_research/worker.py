@@ -94,6 +94,17 @@ def github_run() -> str | None:
     return f"github:{repo}/{run_id}" if run_id and repo else None
 
 
+def abandon_job(job_id: str, reason: str) -> bool:
+    """Mark a job failed when its GitHub run stopped before the job could report it
+    (time limit, crash, setup error). A job already done, failed or cancelled is left alone."""
+    def action(conn):
+        return conn.execute("update research_jobs set status = 'failed', error = %s, message = 'failed', "
+                            "worker = coalesce(worker, %s), finished_at = now() "
+                            "where id = %s and status in ('queued', 'running')",
+                            (reason[:2000], github_run(), job_id)).rowcount
+    return bool(db(action))
+
+
 class Worker:
     def __init__(self, poll: float = 60.0):
         # In GitHub Actions the job row names the run (the admin links to its log) and there is

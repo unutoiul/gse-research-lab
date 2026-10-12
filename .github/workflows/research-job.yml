@@ -18,7 +18,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 360
     env:
       RESEARCH_DATABASE_URL: ${{ secrets.RESEARCH_DATABASE_URL }}
       OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
@@ -53,7 +53,9 @@ jobs:
           path: data/XAU_USD_M15.parquet
           key: oanda-m15-${{ github.run_id }}
 
+      # Below the job limit, so the next step still runs when a long search hits it.
       - name: Run the job
+        timeout-minutes: 330
         run: |
           if [ -z "$JOB_ID" ]; then
             python -m gse_research run-queue
@@ -62,3 +64,9 @@ jobs:
           else
             echo "job_id is not a UUID" && exit 1
           fi
+
+      # A run that dies on its own (time limit, crash, setup error) cannot mark its job,
+      # which would otherwise show as running in the admin forever.
+      - name: Report a run that stopped early
+        if: (failure() || cancelled()) && env.JOB_ID != ''
+        run: python -m gse_research abandon-job "$JOB_ID" "The GitHub run stopped before the job finished (time limit, crash or setup error). Open the log."

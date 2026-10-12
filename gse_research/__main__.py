@@ -18,6 +18,8 @@
         run one queued job and exit (GitHub Actions)
     python -m gse_research run-queue
         run every queued job, then exit
+    python -m gse_research abandon-job <job id> <reason>
+        mark a job failed when its GitHub run stopped early (GitHub Actions)
     python -m gse_research publish
         one-off: store the committed results/ as runs for the admin
 """
@@ -57,6 +59,9 @@ def main() -> None:
     rj = sub.add_parser("run-job", help="run one queued job and exit (GitHub Actions)")
     rj.add_argument("job_id")
     sub.add_parser("run-queue", help="run every queued job, then exit")
+    aj = sub.add_parser("abandon-job", help="mark a job failed when its GitHub run stopped first")
+    aj.add_argument("job_id")
+    aj.add_argument("reason")
     sub.add_parser("publish", help="store the committed results/ as runs for the admin")
     args = parser.parse_args()
 
@@ -94,6 +99,8 @@ def main() -> None:
         raise SystemExit(1 if status == "failed" else 0)
     elif args.command == "run-queue":
         worker.run_worker(once=True, poll=1)
+    elif args.command == "abandon-job":
+        print("marked failed" if worker.abandon_job(args.job_id, args.reason) else "job already finished")
     elif args.command == "publish":
         print(worker.publish_committed())
 

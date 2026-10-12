@@ -78,3 +78,29 @@ def test_db_retries_a_dropped_connection_then_gives_up(monkeypatch):
     calls["n"] = -100
     with pytest.raises(psycopg.OperationalError):
         worker.db(lambda c: "never", retries=2)
+
+
+def test_abandon_job_only_fails_a_job_still_queued_or_running(monkeypatch):
+    from gse_research import worker
+
+    seen = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, params):
+            seen.append((sql, params))
+            return type("Cursor", (), {"rowcount": 1 if "still" in params[0] else 0})()
+
+    monkeypatch.setattr(worker, "_connect", Conn)
+    monkeypatch.setenv("GITHUB_RUN_ID", "42")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/lab")
+    assert worker.abandon_job("job-1", "still running when the run stopped") is True
+    assert worker.abandon_job("job-2", "already done") is False
+    sql, params = seen[0]
+    assert "status in ('queued', 'running')" in sql and "status = 'failed'" in sql
+    assert params == ("still running when the run stopped", "github:owner/lab/42", "job-1")
