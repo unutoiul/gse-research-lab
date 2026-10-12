@@ -180,5 +180,5 @@ def test_oanda_401_is_retried_but_a_lasting_one_fails(monkeypatch):
     replies[:] = [401, 401, 200]
     assert data._fetch_page(Session(), "M15", pd.Timestamp("2020-01-01", tz="UTC")).empty
     replies[:] = [401] * 5
-    with pytest.raises(SystemExit, match="OANDA kept failing \(401: refused\)"):
+    with pytest.raises(SystemExit, match=r"OANDA kept failing \(401: refused\)"):
         data._fetch_page(Session(), "M15", pd.Timestamp("2020-01-01", tz="UTC"))
