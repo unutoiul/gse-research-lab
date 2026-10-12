@@ -23,5 +23,14 @@ def test_worker_count_follows_available_memory():
     from gse_research.resources import default_workers
     assert default_workers(available_gb=4.1, cpus=24) == 3          # (4.1 - 1.5) / 0.8
     assert default_workers(available_gb=30.0, cpus=24) == 16        # capped
-    assert default_workers(available_gb=30.0, cpus=4) == 2          # CPUs - 2
+    assert default_workers(available_gb=30.0, cpus=8) == 6          # CPUs - 2 on a desktop
+    assert default_workers(available_gb=30.0, cpus=4) == 4          # small machines keep every core
     assert default_workers(available_gb=1.0, cpus=24) == 1          # never zero
+
+
+def test_worker_count_override_and_small_machines(monkeypatch):
+    from gse_research.resources import default_workers
+    monkeypatch.setenv("GSE_WORKERS", "2")
+    assert default_workers(available_gb=1.0, cpus=24) == 2
+    monkeypatch.delenv("GSE_WORKERS")
+    assert default_workers(available_gb=7.0, cpus=2) == 2   # a 2-core CI runner keeps both cores

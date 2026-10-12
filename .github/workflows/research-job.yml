@@ -1,0 +1,64 @@
+# Runs one research job queued from the website admin (Research tab), or every queued job.
+# The admin dispatches this workflow with the job's id. Results go to the research tables
+# through RESEARCH_DATABASE_URL, a login limited to those tables.
+name: research-job
+run-name: "research job ${{ inputs.job_id || 'queue' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "research_jobs id (leave empty to run every queued job)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      RESEARCH_DATABASE_URL: ${{ secrets.RESEARCH_DATABASE_URL }}
+      OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
+      OANDA_ENV: ${{ secrets.OANDA_ENV }}
+      JOB_ID: ${{ inputs.job_id }}
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Restore market data
+        uses: actions/cache/restore@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+          restore-keys: oanda-m15-
+
+      - name: Update market data (OANDA, only the missing candles)
+        run: python -m gse_research download
+
+      - name: Save market data
+        uses: actions/cache/save@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+
+      - name: Run the job
+        run: |
+          if [ -z "$JOB_ID" ]; then
+            python -m gse_research run-queue
+          elif [[ "$JOB_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            python -m gse_research run-job "$JOB_ID"
+          else
+            echo "job_id is not a UUID" && exit 1
+          fi

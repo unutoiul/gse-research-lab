@@ -138,3 +138,21 @@ def test_with_spread_scales_bid_and_ask_toward_mid():
     assert half["ask_open"].iat[0] == pytest.approx(101.0 + SPREAD / 4)
     assert half["bid_low"].iat[0] == pytest.approx(100.8 - SPREAD / 4)
     assert (mid["ask_close"] == mid["close"]).all() and (mid["bid_high"] == mid["high"]).all()
+
+
+def test_risk_statistics_and_verdict_rules():
+    r = pd.Series([1.0, -1.0, -1.0, -1.0, 3.0, 2.0])
+    t = pd.DataFrame({"R": r, "entry_time": pd.date_range("2026-01-05", periods=6, freq="7D", tz="UTC"),
+                      "mfe_R": 1.0, "mae_R": 0.5, "planned_rr": 2.0, "bars_held": 4, "reason": "time"})
+    s = metrics.summarize(t, weeks=6)
+    assert s["max_consecutive_losses"] == 3
+    assert s["sqn"] == pytest.approx(np.sqrt(6) * r.mean() / r.std(ddof=1))
+    assert s["R_per_year"] == pytest.approx(3.0 / 6 * 52)
+    ci = metrics.bootstrap_mean(t)
+    assert ci["low"] <= r.mean() <= ci["high"]
+    assert metrics.verdict({"trades": 50, "expectancy_R": 1.0}, 0.5, False)["status"] == "inconclusive"
+    assert metrics.verdict({"trades": 300, "expectancy_R": -0.1, "profit_factor": 0.8}, None, False)["status"] == "rejected"
+    assert metrics.verdict({"trades": 300, "expectancy_R": 0.2, "profit_factor": 1.5}, 0.05, True)["status"] == "in_sample"
+    assert metrics.verdict({"trades": 300, "expectancy_R": 0.2, "profit_factor": 1.5}, -0.01, False)["status"] == "watch"
+    assert metrics.verdict({"trades": 300, "expectancy_R": 0.2, "profit_factor": 1.1}, 0.05, False)["status"] == "watch"
+    assert metrics.verdict({"trades": 300, "expectancy_R": 0.2, "profit_factor": 1.5}, 0.05, False)["status"] == "candidate"

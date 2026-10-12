@@ -37,9 +37,15 @@ def available_memory_gb() -> float | None:
 
 def default_workers(per_worker_gb: float = PER_WORKER_GB, reserve_gb: float = RESERVE_GB,
                     available_gb: float | None = None, cpus: int | None = None) -> int:
-    """min(CPUs - 2, 16, (available memory - reserve) / per-worker memory), at least 1."""
+    """min(CPUs - 2, 16, (available memory - reserve) / per-worker memory), at least 1.
+
+    GSE_WORKERS overrides it (a CI runner has no desktop to share: use all its cores).
+    Machines with 4 cores or fewer keep every core.
+    """
+    if os.environ.get("GSE_WORKERS", "").isdigit() and int(os.environ["GSE_WORKERS"]) > 0:
+        return int(os.environ["GSE_WORKERS"])
     cpus = cpus or os.cpu_count() or 2
-    by_cpu = max(1, min(MAX_WORKERS, cpus - 2))
+    by_cpu = max(1, min(MAX_WORKERS, cpus if cpus <= 4 else cpus - 2))
     available_gb = available_memory_gb() if available_gb is None else available_gb
     if available_gb is None:
         return by_cpu

@@ -68,25 +68,46 @@ def set_state(conn: psycopg.Connection, key: str, value: dict) -> None:
         (key, Jsonb(value)))
 
 
+def _run_values(run: dict) -> tuple:
+    opt = lambda k: Jsonb(run[k]) if run.get(k) is not None else None
+    return (run["kind"], run["title"], Jsonb(run["params"]), Jsonb(run["summary"]), opt("equity"), opt("tables"),
+            opt("detail"), run.get("report_md"), Jsonb(run["provenance"]))
+
+
 def store_run(conn: psycopg.Connection, run: dict, job_id=None) -> str:
     row = conn.execute(
-        "insert into research_runs(job_id, kind, title, params, summary, equity, tables, report_md, provenance) "
-        "values (%s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
-        (job_id, run["kind"], run["title"], Jsonb(run["params"]), Jsonb(run["summary"]),
-         Jsonb(run["equity"]) if run.get("equity") is not None else None,
-         Jsonb(run["tables"]) if run.get("tables") is not None else None, run.get("report_md"), Jsonb(run["provenance"]))).fetchone()
+        "insert into research_runs(job_id, kind, title, params, summary, equity, tables, detail, report_md, provenance) "
+        "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning id", (job_id, *_run_values(run))).fetchone()
     return str(row[0])
 
 
+def refresh_run(conn: psycopg.Connection, run_id, run: dict) -> None:
+    """Rewrite a stored run in place (the worker login may update, never delete)."""
+    conn.execute(
+        "update research_runs set kind = %s, title = %s, params = %s, summary = %s, equity = %s, tables = %s, detail = %s, "
+        "report_md = %s, provenance = %s where id = %s", (*_run_values(run), run_id))
+
+
+def github_run() -> str | None:
+    """'github:<owner/repo>/<run id>' inside a GitHub Actions run, else None."""
+    run_id, repo = os.environ.get("GITHUB_RUN_ID"), os.environ.get("GITHUB_REPOSITORY")
+    return f"github:{repo}/{run_id}" if run_id and repo else None
+
+
 class Worker:
-    def __init__(self, poll: float):
-        self.name = f"{socket.gethostname()}:{os.getpid()}"
+    def __init__(self, poll: float = 60.0):
+        # In GitHub Actions the job row names the run (the admin links to its log) and there is
+        # no long-lived worker, so no heartbeat is written.
+        self.github = github_run()
+        self.name = self.github or f"{socket.gethostname()}:{os.getpid()}"
         self.poll = poll
         self.started = _now()
         self.git = experiments._git()["commit"][:10]
         self.current: dict | None = None
 
     def heartbeat(self, conn: psycopg.Connection) -> None:
+        if self.github:
+            return
         # poll_s lets the admin judge "online" (no heartbeat for 3 polls = offline).
         set_state(conn, "worker", {"name": self.name, "host": socket.gethostname(), "pid": os.getpid(),
                                    "started_at": self.started, "git": self.git, "poll_s": max(self.poll, JOB_HEARTBEAT_S if self.current else 0),
@@ -145,9 +166,31 @@ class Worker:
             stop.set()
             self.current = None
 
+    def run_one(self, job_id: str) -> str:
+        """Run one specific job if it is still queued (GitHub Actions). Returns its final status."""
+        def take(conn):
+            with conn.transaction():
+                row = conn.execute("select id, kind, params from research_jobs where id = %s and status = 'queued' "
+                                   "for update skip locked", (job_id,)).fetchone()
+                if row is not None:
+                    conn.execute("update research_jobs set status = 'running', started_at = now(), worker = %s, "
+                                 "message = 'starting', progress = 0 where id = %s", (self.name, row[0]))
+            return row
+        row = db(take)
+        if row is None:
+            print(f"job {job_id} is not queued (already taken, cancelled or unknown)", flush=True)
+            return "skipped"
+        print(f"{_now()} {row[1]} {job_id} started", flush=True)
+        self.run_job(row[0], row[1], row[2] or {})
+        status = db(lambda c: c.execute("select status from research_jobs where id = %s", (job_id,)).fetchone()[0])
+        print(f"{_now()} {row[1]} {job_id} {status}", flush=True)
+        return status
+
     def run(self, once: bool = False) -> None:
         # A job left running by a previous worker on this machine cannot finish any more.
-        db(lambda c: c.execute("update research_jobs set status = 'failed', error = 'worker restarted', message = 'failed', "
+        # (Not in GitHub Actions: other runs may be working in parallel.)
+        if not self.github:
+            db(lambda c: c.execute("update research_jobs set status = 'failed', error = 'worker restarted', message = 'failed', "
                                "finished_at = now() where status = 'running' and worker like %s", (f"{socket.gethostname()}:%",)))
         if db(lambda c: c.execute("select 1 from research_state where key = 'dataset'").fetchone()) is None:
             state = jobs.dataset_state()
@@ -178,14 +221,22 @@ def run_worker(once: bool = False, poll: float = 60.0) -> None:
         print("stopping", flush=True)
 
 
-def publish_committed() -> list[str]:
-    """Store results/ (R001 train, O1, O2) as runs once; skips any already stored."""
+def publish_committed() -> dict:
+    """Store results/ as runs; a result already published from the same folder is rewritten in place."""
     runs = jobs.committed_results()
     state = jobs.dataset_state()
 
     def action(conn):
-        have = {r[0] for r in conn.execute("select provenance->>'source' from research_runs where provenance ? 'source'").fetchall()}
-        stored = [store_run(conn, run) for run in runs if run["provenance"].get("source") not in have]
+        have = dict(conn.execute("select provenance->>'source', id from research_runs where provenance ? 'source'").fetchall())
+        done = {"stored": 0, "refreshed": 0}
+        for run in runs:
+            source = run["provenance"].get("source")
+            if source in have:
+                refresh_run(conn, have[source], run)
+                done["refreshed"] += 1
+            else:
+                store_run(conn, run)
+                done["stored"] += 1
         set_state(conn, "dataset", state)
-        return stored
+        return done
     return db(action)

@@ -14,6 +14,10 @@
         study O3: GSE Strategy v4.0 stop and target constants, written to results/O3/
     python -m gse_research worker [--once] [--poll 60]
         run jobs queued from the website admin (Research tab)
+    python -m gse_research run-job <job id>
+        run one queued job and exit (GitHub Actions)
+    python -m gse_research run-queue
+        run every queued job, then exit
     python -m gse_research publish
         one-off: store the committed results/ as runs for the admin
 """
@@ -50,6 +54,9 @@ def main() -> None:
     wk = sub.add_parser("worker", help="run jobs queued from the website admin")
     wk.add_argument("--once", action="store_true", help="exit when the queue is empty")
     wk.add_argument("--poll", type=float, default=60.0, help="seconds between queue checks (Neon sleeps only if > its 5-minute window)")
+    rj = sub.add_parser("run-job", help="run one queued job and exit (GitHub Actions)")
+    rj.add_argument("job_id")
+    sub.add_parser("run-queue", help="run every queued job, then exit")
     sub.add_parser("publish", help="store the committed results/ as runs for the admin")
     args = parser.parse_args()
 
@@ -82,8 +89,13 @@ def main() -> None:
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "worker":
         worker.run_worker(args.once, args.poll)
+    elif args.command == "run-job":
+        status = worker.Worker().run_one(args.job_id)
+        raise SystemExit(1 if status == "failed" else 0)
+    elif args.command == "run-queue":
+        worker.run_worker(once=True, poll=1)
     elif args.command == "publish":
-        print(f"stored {len(worker.publish_committed())} runs")
+        print(worker.publish_committed())
 
 
 if __name__ == "__main__":

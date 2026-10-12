@@ -8,8 +8,8 @@
     ],
     "weeks": 156.6,
     "git": {
-      "commit": "fa24dda588cb2e455f721e4b0fc773d54c00565a",
-      "dirty": false
+      "commit": "c302e9cc4abfdf228532bad15696e1549d70f24c",
+      "dirty": true
     },
     "dataset": {
       "file": "XAU_USD_M15.parquet",
@@ -66,8 +66,13 @@
       "median_planned_rr": 3.116094986808271,
       "avg_spread_R": 0.20840346207842875,
       "avg_bars_held": 7.106796116504855,
+      "std_R": 1.2847385587842466,
+      "sqn": -3.786138092160522,
+      "max_consecutive_losses": 27,
+      "recovery_factor": -0.8292584191497796,
       "trades_per_week": 1.9735401459854014,
       "trades_per_month": 8.552007299270073,
+      "R_per_year": -28.397576487235575,
       "exit_stop": 208,
       "exit_time": 69,
       "exit_target": 31,
@@ -87,8 +92,13 @@
       "median_planned_rr": 2.74124433456954,
       "avg_spread_R": 0.19293126422651288,
       "avg_bars_held": 7.106796116504855,
+      "std_R": 1.2147113935257294,
+      "sqn": -5.476642995312461,
+      "max_consecutive_losses": 27,
+      "recovery_factor": -0.8908021965792091,
       "trades_per_week": 1.9735401459854014,
       "trades_per_month": 8.552007299270073,
+      "R_per_year": -38.838066930444754,
       "exit_stop": 208,
       "exit_time": 69,
       "exit_target": 31,
@@ -108,8 +118,13 @@
       "median_planned_rr": 2.3239875389409597,
       "avg_spread_R": 0.16865438409150535,
       "avg_bars_held": 7.106796116504855,
+      "std_R": 1.105156205761269,
+      "sqn": -8.6432885481566,
+      "max_consecutive_losses": 31,
+      "recovery_factor": -0.9493665441534009,
       "trades_per_week": 1.9735401459854014,
       "trades_per_month": 8.552007299270073,
+      "R_per_year": -55.766417742129605,
       "exit_stop": 208,
       "exit_time": 69,
       "exit_target": 31,
@@ -129,8 +144,13 @@
       "median_planned_rr": 7.250382335660587,
       "avg_spread_R": 0.23622889593550633,
       "avg_bars_held": 8.5,
+      "std_R": 0.0,
+      "sqn": NaN,
+      "max_consecutive_losses": 2,
+      "recovery_factor": -1.0,
       "trades_per_week": 0.012773722627737225,
       "trades_per_month": 0.055352798053527975,
+      "R_per_year": -0.6642335766423357,
       "exit_stop": 2
     },
     "V1@0.10": {
@@ -147,8 +167,13 @@
       "median_planned_rr": 6.681027814213742,
       "avg_spread_R": 0.2190995227898157,
       "avg_bars_held": 8.5,
+      "std_R": 0.020280662883376585,
+      "sqn": -74.60182410428314,
+      "max_consecutive_losses": 2,
+      "recovery_factor": -1.0,
       "trades_per_week": 0.012773722627737225,
       "trades_per_month": 0.055352798053527975,
+      "R_per_year": -0.710619989657031,
       "exit_stop": 2
     },
     "V1@0.30": {
@@ -165,8 +190,13 @@
       "median_planned_rr": 5.75634164106812,
       "avg_spread_R": 0.19153864867116235,
       "avg_bars_held": 8.5,
+      "std_R": 0.04687282065721032,
+      "sqn": -35.692464712269164,
+      "max_consecutive_losses": 2,
+      "recovery_factor": -1.0,
       "trades_per_week": 0.012773722627737225,
       "trades_per_month": 0.055352798053527975,
+      "R_per_year": -0.7857844946445752,
       "exit_stop": 2
     }
   },
@@ -191,6 +221,10 @@
       "median_planned_rr": 6.681027814213742,
       "avg_spread_R": 0.2190995227898157,
       "avg_bars_held": 8.5,
+      "std_R": 0.020280662883376585,
+      "sqn": -74.60182410428314,
+      "max_consecutive_losses": 2,
+      "recovery_factor": -1.0,
       "exit_stop": 2
     },
     "R_removed_by_V1": {
@@ -207,6 +241,10 @@
       "median_planned_rr": 2.7196467991170863,
       "avg_spread_R": 0.19276078697202884,
       "avg_bars_held": 7.09771986970684,
+      "std_R": 1.2173831572845082,
+      "sqn": -5.382083350071659,
+      "max_consecutive_losses": 26,
+      "recovery_factor": -0.8889928911553135,
       "exit_stop": 206,
       "exit_time": 69,
       "exit_target": 31,
@@ -226,6 +264,10 @@
     "avg_mae_R": NaN,
     "median_planned_rr": NaN,
     "avg_spread_R": NaN,
-    "avg_bars_held": NaN
+    "avg_bars_held": NaN,
+    "std_R": NaN,
+    "sqn": NaN,
+    "max_consecutive_losses": 0,
+    "recovery_factor": NaN
   }
 }

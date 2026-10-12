@@ -4,7 +4,7 @@
 
 Golden Zone turning on at a candle close; control C0 (Require Sweep off) versus V1 (on). Execution RXM-1 (next open, level-wick stop, first-obstacle target, 16 candles, bid/ask fills). Not GSE behaviour: a labelled research model.
 
-Git `fa24dda588` · dataset SHA-256 `a637520850ec…` · 156.6 weeks
+Git `c302e9cc4a` (dirty) · dataset SHA-256 `a637520850ec…` · 156.6 weeks
 
 ## Results by arm and slippage
 

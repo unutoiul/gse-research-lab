@@ -46,13 +46,69 @@ def summarize(trades: pd.DataFrame, weeks: float | None = None) -> dict:
         "avg_spread_R": float(t["spread_R"].mean()) if len(t) and "spread_R" in t else np.nan,
         "avg_bars_held": float(t["bars_held"].mean()) if len(t) else np.nan,
     }
+    # Risk statistics: SQN = sqrt(N) x mean / std of R per trade (Van Tharp's System Quality Number).
+    std = float(r.std(ddof=1)) if len(r) > 1 else np.nan
+    out["std_R"] = std
+    out["sqn"] = float(np.sqrt(len(r)) * r.mean() / std) if len(r) > 1 and std > 0 else np.nan
+    out["max_consecutive_losses"] = _longest_run(r <= 0)
+    out["recovery_factor"] = float(r.sum() / out["max_drawdown_R"]) if out["max_drawdown_R"] > 0 else np.nan
     if weeks:
         out["trades_per_week"] = len(r) / weeks
         out["trades_per_month"] = len(r) / weeks * 52 / 12
+        out["R_per_year"] = float(r.sum() / weeks * 52)
     if len(t):
         for reason, n in t["reason"].value_counts().items():
             out[f"exit_{reason}"] = int(n)
     return out
+
+
+def _longest_run(flags: pd.Series) -> int:
+    best = cur = 0
+    for f in flags.to_numpy():
+        cur = cur + 1 if f else 0
+        best = max(best, cur)
+    return int(best)
+
+
+def bootstrap_mean(trades: pd.DataFrame, n: int = 2000, seed: int = 7, level: float = 0.90) -> dict:
+    """Interval for the mean R per trade, resampling calendar weeks (trades in a week move together)."""
+    t = closed(trades)
+    if len(t) < 2:
+        return {"low": np.nan, "high": np.nan}
+    wk = t["entry_time"].dt.tz_convert("UTC").dt.tz_localize(None).dt.to_period("W").astype(str)
+    g = t.groupby(wk)["R"].agg(["sum", "count"]).to_numpy()
+    idx = np.random.default_rng(seed).integers(0, len(g), size=(n, len(g)))
+    s, c = g[idx, 0].sum(1), g[idx, 1].sum(1)
+    means = s[c > 0] / c[c > 0]
+    lo, hi = np.quantile(means, [(1 - level) / 2, 1 - (1 - level) / 2])
+    return {"low": float(lo), "high": float(hi)}
+
+
+# Verdict rules, fixed before any result is read. A result is never "deployable" here:
+# the best possible status, "candidate", still needs the locked test period and the parity gate.
+MIN_TRADES = 100
+MIN_PROFIT_FACTOR = 1.2
+
+
+def verdict(summary: dict, ci_low: float | None, in_sample: bool) -> dict:
+    n, e, pf = summary.get("trades", 0), summary.get("expectancy_R", np.nan), summary.get("profit_factor", np.nan)
+    if n < MIN_TRADES:
+        return {"status": "inconclusive", "label": "Inconclusive", "reasons": [f"{n} trades; at least {MIN_TRADES} are needed"]}
+    if not e > 0:
+        return {"status": "rejected", "label": "Rejected",
+                "reasons": [f"expectancy {e:+.3f} R per trade after costs" + (" (in-sample)" if in_sample else " out of sample")]}
+    if in_sample:
+        return {"status": "in_sample", "label": "In-sample only",
+                "reasons": ["positive on training data only; run it on the validation period"]}
+    reasons = []
+    if ci_low is not None and not ci_low > 0:
+        reasons.append(f"90% interval of the expectancy reaches {ci_low:+.3f} R (includes zero)")
+    if not pf >= MIN_PROFIT_FACTOR:
+        reasons.append(f"profit factor {pf:.2f} < {MIN_PROFIT_FACTOR}")
+    if reasons:
+        return {"status": "watch", "label": "Watch", "reasons": reasons}
+    return {"status": "candidate", "label": "Candidate",
+            "reasons": ["positive out of sample with a margin; next: locked test period and the TradingView parity check"]}
 
 
 def by_group(trades: pd.DataFrame, column: str) -> pd.DataFrame:

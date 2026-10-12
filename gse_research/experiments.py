@@ -91,6 +91,9 @@ def run_r001(period: str, allow_test: bool = False, out_dir: Path | None = None)
     out_dir = out_dir or ROOT / "results" / "R001" / period
     out_dir.mkdir(parents=True, exist_ok=True)
     pd.concat(trades.values(), ignore_index=True).to_csv(out_dir / "trades.csv", index=False)
+    # The Golden Zone rejection funnel per arm: candles by first failing condition (audit 4.1 order).
+    pd.concat([f.assign(arm=name) for name, f in funnels.items()], ignore_index=True)[
+        ["arm", "side", "stage", "rejected", "share_of_candles", "remaining"]].to_csv(out_dir / "funnel.csv", index=False)
     manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]
     provenance = {
         "experiment": "R001", "period": period, "range": [str(t_start), str(t_end)], "weeks": round(weeks, 1),

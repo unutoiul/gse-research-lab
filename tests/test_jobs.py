@@ -10,7 +10,9 @@ from gse_research import jobs
 
 
 def test_defaults_and_valid_parameters():
-    assert jobs.validate("strategy_backtest", {}) == {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net", "path": "conservative"}
+    assert jobs.validate("strategy_backtest", {}) == {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net",
+                                                      "path": "conservative", "stop_buffer_atr": 0.2, "min_r": 1.5, "max_atr": 8.0}
+    assert jobs.validate("strategy_backtest", {"stop_buffer_atr": 1, "min_r": 1.0})["stop_buffer_atr"] == 1.0
     assert jobs.validate("strategy_backtest", {"swing_len": 7, "period": "validate", "costs": "half"})["swing_len"] == 7
     assert jobs.validate("r001", {"period": "validate"}) == {"period": "validate"}
     assert jobs.validate("search_o1", {"trials": 50}) == {"trials": 50}
@@ -27,6 +29,10 @@ def test_defaults_and_valid_parameters():
     ("strategy_backtest", {"costs": "free"}),
     ("strategy_backtest", {"start": "2023-01-01"}),  # unknown keys are refused
     ("search_o1", {"trials": 5000}),
+    ("strategy_backtest", {"stop_buffer_atr": 0.0}),
+    ("strategy_backtest", {"max_atr": "8"}),
+    ("strategy_backtest", {"min_r": True}),
+    ("search_o3", {"anything": 1}),
     ("delete_everything", {}),
 ])
 def test_invalid_parameters_are_refused(kind, params):
