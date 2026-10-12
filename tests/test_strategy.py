@@ -264,3 +264,56 @@ def test_1h_chart_signals_do_not_look_ahead_and_fill_on_1h_candles():
     assert full["signal"].sum() > 0
     trades, counts = st.simulate(h1, full, "2023-11-01", "2024-03-01")
     assert counts["filled"] > 0 and trades["fill_time"].dt.minute.eq(0).all()
+
+
+
+def test_reaction_pick_follows_the_indicator_rejection_rule():
+    sup = Level(1, 100.0, 1, st.ST_FRESH, 0, 99.5)
+    res = Level(2, 110.0, -1, st.ST_FRESH, 0, 110.5)
+    fresh = {1, 2}
+    # Bullish candle that dipped to 99.8 through the support and closed 101: lower wick 1.0 of 1.4 (71%).
+    assert st.reaction_pick([sup, res], 1, fresh, 100.8, 101.2, 99.8, 101.0) is sup
+    assert st.reaction_pick([sup, res], 1, set(), 100.8, 101.2, 99.8, 101.0) is None      # not fresh before
+    assert st.reaction_pick([sup, res], 1, fresh, 101.0, 101.2, 99.8, 100.8) is None      # bearish candle
+    assert st.reaction_pick([sup, res], 1, fresh, 100.2, 101.2, 99.8, 101.0) is None      # wick 0.4 of 1.4
+    assert st.reaction_pick([sup, res], 1, fresh, 100.8, 101.2, 100.1, 101.0) is None     # never reached it
+    # Bearish rejection of the resistance mirrors it.
+    assert st.reaction_pick([sup, res], -1, fresh, 109.2, 110.3, 108.9, 109.0) is res
+    # Close back: any candle that touched it and closed on its side, whatever its colour or wick.
+    assert st.reaction_pick([sup, res], 1, fresh, 101.0, 101.2, 99.8, 100.8, strict=False) is sup
+    assert st.reaction_pick([sup, res], 1, fresh, 100.5, 100.6, 99.4, 99.9, strict=False) is None  # closed below
+
+
+def test_a_market_order_fills_at_the_next_open_with_slippage():
+    df = _frame([FLAT, (101.0, 104.3, 100.9, 104.0)] + [FLAT] * 3)
+    sig = _sig(len(df), entry=101.0, stop=100.0, tp2=104.0, until=1)
+    sig["order"] = "market"
+    trades, counts = st.simulate(df, sig, "2026-03-01", "2026-04-01", st.Broker(slippage=0.05))
+    t = trades.iloc[0]
+    assert counts["filled"] == 1 and t["fill_bar"] == 1
+    assert t["fill"] == pytest.approx(101.15)                  # ask open 101.1 + 0.05 slippage
+    assert t["reason"] == "target" and t["exit"] == 104.0
+    assert t["R"] == pytest.approx((104.0 - 101.15) / 1.0)     # planned risk: signal close 101 to stop 100
+
+
+@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
+@pytest.mark.parametrize("mode", ["rejection", "close_back"])
+def test_confirmed_entries_are_first_touches_entered_at_the_next_open(mode):
+    m15 = data.load("M15", start="2023-09-01", end="2024-03-01")
+    sig = st.signals(m15, st.StrategyParams(h4_mode="against", entry_mode=mode))
+    live = sig[sig["signal"]]
+    assert len(live) > 0 and (sig["order"] == "market").all()
+    c = m15.loc[live.index]
+    d = live["dir"].astype(int)
+    assert (live["entry"] == c["close"]).all()
+    # The stop sits beyond the rejection wick, so beyond the candle's extreme on the trade side.
+    assert (d * (np.where(d == 1, c["low"], c["high"]) - live["stop"]) > 0).all()
+    # A level is entered on its first touch only.
+    assert not live["level_id"].duplicated().any()
+    trades, counts = st.simulate(m15, sig, "2023-11-01", "2024-03-01")
+    assert counts["filled"] == counts["submitted"] > 0
+    assert (trades["fill_time"] > trades["signal_time"]).all()
+    # Filled at the next candle's ask (long) or bid (short) open, plus the 0.10 slippage.
+    assert np.allclose(trades["fill"] - trades["dir"] * 0.10, (
+        m15.set_index("time").loc[trades["fill_time"], ["ask_open", "bid_open"]]
+        .to_numpy()[np.arange(len(trades)), (trades["dir"] == -1).astype(int).to_numpy()]), atol=1e-9)

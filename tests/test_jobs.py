@@ -13,7 +13,7 @@ def test_defaults_and_valid_parameters():
     assert jobs.validate("strategy_backtest", {}) == {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net",
                                                       "path": "conservative", "stop_buffer_atr": 0.2, "min_r": 1.5, "max_atr": 8.0,
                                                       "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0,
-                                                      "chart_tf": "15m", "d1_mode": "off"}
+                                                      "chart_tf": "15m", "d1_mode": "off", "entry_mode": "limit"}
     assert jobs.validate("strategy_backtest", {"h4_mode": "against", "stop_usd": 20})["stop_usd"] == 20.0
     assert jobs.validate("strategy_backtest", {"stop_buffer_atr": 1, "min_r": 1.0})["stop_buffer_atr"] == 1.0
     assert jobs.validate("strategy_backtest", {"swing_len": 7, "period": "validate", "costs": "half"})["swing_len"] == 7
@@ -41,6 +41,7 @@ def test_defaults_and_valid_parameters():
     ("strategy_backtest", {"stop_usd": 20, "stop_atr": 2.6}),  # one fixed stop at a time
     ("strategy_backtest", {"chart_tf": "4H"}),
     ("strategy_backtest", {"d1_mode": "sometimes"}),
+    ("strategy_backtest", {"entry_mode": "breakout"}),
     ("search_o3", {"anything": 1}),
     ("delete_everything", {}),
 ])

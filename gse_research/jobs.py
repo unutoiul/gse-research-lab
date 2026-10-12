@@ -43,10 +43,10 @@ SCHEMA = {
          "path": ("conservative", "tradingview"), "stop_buffer_atr": {"float": [0.05, 3.0]},
          "min_r": {"float": [0.5, 5.0]}, "max_atr": {"float": [1.0, 20.0]},
          "h4_mode": ("with", "against"), "stop_usd": {"float": [0.0, 200.0]}, "stop_atr": {"float": [0.0, 20.0]},
-         "chart_tf": ("15m", "1H"), "d1_mode": ("off", "with", "against")},
+         "chart_tf": ("15m", "1H"), "d1_mode": ("off", "with", "against"), "entry_mode": ("limit", "rejection", "close_back")},
         {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net", "path": "conservative",
          "stop_buffer_atr": strategy.STOP_BUFFER_ATR, "min_r": strategy.MIN_R, "max_atr": strategy.MAX_ATR,
-         "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0, "chart_tf": "15m", "d1_mode": "off"}),
+         "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0, "chart_tf": "15m", "d1_mode": "off", "entry_mode": "limit"}),
     "search_o1": ({"trials": [20, 400]}, {"trials": 400}),
     "search_o2": ({}, {}),
     "search_o3": ({}, {}),
@@ -293,7 +293,7 @@ def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, Non
     p = strategy.StrategyParams(swing_len=params["swing_len"], h4_swing_len=params["h4_swing_len"],
                                 stop_buffer_atr=params["stop_buffer_atr"], min_r=params["min_r"], max_atr=params["max_atr"],
                                 h4_mode=params["h4_mode"], stop_usd=params["stop_usd"], stop_atr=params["stop_atr"],
-                                d1_mode=params["d1_mode"])
+                                d1_mode=params["d1_mode"], entry_mode=params["entry_mode"])
     history, m15 = m15, m15[m15["time"] >= pd.Timestamp(WARMUP, tz="UTC")].reset_index(drop=True)
     chart = m15 if params["chart_tf"] == "15m" else data.aggregate(m15, params["chart_tf"])
     progress(0.15, f"{params['chart_tf']} levels, 1H/4H snapshots and signals")
@@ -324,7 +324,7 @@ def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, Non
               "trades": trade_table(trades, STRATEGY_TRADE_COLS)}
     stop = (f"stop ${p.stop_usd:g}" if p.stop_usd > 0 else f"stop {p.stop_atr:g} ATR" if p.stop_atr > 0
             else f"stop +{p.stop_buffer_atr:g} ATR")
-    d1_text = f" · {p.d1_mode} 1D" if p.d1_mode != "off" else ""
+    d1_text = (f" · {p.d1_mode} 1D" if p.d1_mode != "off" else "") + (f" · {p.entry_mode.replace('_', ' ')} entry" if p.entry_mode != "limit" else "")
     title = (f"Strategy v4.0 · {params['chart_tf']} chart {p.swing_len} / H4 {p.h4_swing_len} · {p.h4_mode} 4H{d1_text} · {stop}, "
              f"≥{p.min_r:g}R, ≤{p.max_atr:g} ATR · {params['period']} · {params['costs']}")
     report = "\n".join([f"# {title}", "", f"> {experiments.PROVISIONAL}", "",

@@ -47,6 +47,10 @@ class StrategyParams:
     stop_usd: float = 0.0    # > 0: fixed stop this many dollars from the entry instead of the structural stop
     stop_atr: float = 0.0    # > 0: fixed stop this many chart ATRs from the entry (scales with gold's price)
     d1_mode: str = "off"     # "with" / "against": trade only when GSE's 1D bias agrees with / opposes the trade
+    # "limit": a limit at the level (the Pine). After the first touch of a fresh level, at the next open:
+    # "rejection" if the candle closed back with the indicator's rejection wick (>= half its range),
+    # "close_back" if it simply closed back on the level's side (the indicator's candle-close touch).
+    entry_mode: str = "limit"
 
     def stop_distance(self, atr: float) -> float:
         """Fixed stop distance from the entry, or 0 for the Pine structural stop."""
@@ -92,6 +96,27 @@ def touch_pick(levels, h4_dir: int, bar_close: float):
     for lv in levels:
         if lv.state == ST_FRESH and lv.touches == 0 and not lv.in_contact and lv.role == h4_dir and lv.role * (bar_close - lv.price) > 0:
             if best is None or abs(bar_close - lv.price) < abs(bar_close - best.price):
+                best = lv
+    return best
+
+
+def reaction_pick(levels, d: int, was_fresh: set, o: float, h: float, l: float, c: float, strict: bool = True):
+    """Research variant: a level that was fresh and untouched at the previous close and that this
+    candle touched and closed back on its side of. strict: the indicator's level-reaction rule
+    (alerts.pine f_level_reaction_pct), a candle closing in the trade direction with a rejection
+    wick of at least half its range; otherwise any close back (the indicator's candle-close touch
+    timing). The nearest such level to the close, or None."""
+    rng = h - l
+    if not rng > 0:
+        return None
+    if strict and d == 1 and not (c > o and (min(o, c) - l) / rng >= 0.5):
+        return None
+    if strict and d == -1 and not (c < o and (h - max(o, c)) / rng >= 0.5):
+        return None
+    best = None
+    for lv in levels:
+        if lv.id in was_fresh and lv.role == d and l <= lv.price <= h and d * (c - lv.price) > 0:
+            if best is None or abs(c - lv.price) < abs(c - best.price):
                 best = lv
     return best
 
@@ -285,18 +310,25 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
 
     The chart is the 15m frame of the Pine strategy, or a 1H frame (research variant: the Pine
     strategy trades only on 15m). `dir` is the trade direction (the H4 direction, or its opposite
-    when h4_mode is "against"); `h4_dir` is the H4 direction itself; `d1` the 1D bias when used."""
+    when h4_mode is "against"); `h4_dir` is the H4 direction itself; `d1` the 1D bias when used.
+    `order` is "limit" (a limit at the level, as in the Pine) or "market" (entry_mode "rejection" or
+    "close_back": a market order at the next open after the confirming candle, planned from its close)."""
     h1_pk, h1_idx, h1_close = h1 if h1 is not None else h1_inputs(m15, p)
     h4_pk, h4_idx, h4_close, dir_seen = h4 if h4 is not None else h4_inputs(m15, p)
     decision = _ms(m15["close_time"])
     n = len(m15)
     cols = {k: [None] * n for k in ("dir", "h4_dir", "d1", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason")}
+    confirm = p.entry_mode in ("rejection", "close_back")
+    cols["order"] = ["market" if confirm else "limit"] * n
+    O, H, Lo = (m15[k].to_numpy(float) for k in ("open", "high", "low"))
+    track = {"fresh": set()}  # ids of fresh, untouched levels at the previous close (rejection entries)
     flip = {"with": 1, "against": -1}[p.h4_mode]
     d1_want = {"off": 0, "with": 1, "against": -1}[p.d1_mode]
     if d1_want and d1 is None:
         d1 = d1_inputs(m15, p)
 
     def hook(t, levels, eqh, eql, pdh, pdl, pwh, pwl, atr, c):
+        was_fresh, track["fresh"] = track["fresh"], {lv.id for lv in levels if lv.state == ST_FRESH and lv.touches == 0}
         h4 = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
         d = h4 * flip
         cols["dir"][t], cols["h4_dir"][t] = d, h4
@@ -313,17 +345,27 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
             if isna(d1[t]) or np.sign(d1[t]) != d * d1_want:  # a neutral (0) day trades neither way
                 cols["reason"][t] = "d1_context"
                 return
-        lv = touch_pick(levels, d, c)
-        if lv is None:
-            cols["reason"][t] = "no_fresh_level"
-            return
+        if confirm:
+            lv = reaction_pick(levels, d, was_fresh, O[t], H[t], Lo[t], c, strict=p.entry_mode == "rejection")
+            if lv is None:
+                cols["reason"][t] = "no_rejection"
+                return
+            # Planned from the rejection close; the stop goes beyond the rejection wick.
+            extreme = Lo[t] if d == 1 else H[t]
+            entry, wick = c, extreme if isna(lv.wick) else (min(extreme, lv.wick) if d == 1 else max(extreme, lv.wick))
+        else:
+            lv = touch_pick(levels, d, c)
+            if lv is None:
+                cols["reason"][t] = "no_fresh_level"
+                return
+            entry, wick = lv.price, lv.wick
         raw: list = []
-        unpack(raw, packet(levels, eqh, eql, pdh, pdl, pwh, pwl, p.tick), 0, decision[t], decision[t], d, lv.price)
-        unpack(raw, h1_pk[int(h1_idx[t])], 1, h1_close[t], decision[t], d, lv.price)
-        unpack(raw, h4_pk[int(h4_idx[t])], 2, h4_close[t], decision[t], d, lv.price)
-        plan = structure_targets(raw, d, lv.price, lv.wick, atr, p.tick, p.stop_buffer_atr, p.min_r, p.max_atr,
+        unpack(raw, packet(levels, eqh, eql, pdh, pdl, pwh, pwl, p.tick), 0, decision[t], decision[t], d, entry)
+        unpack(raw, h1_pk[int(h1_idx[t])], 1, h1_close[t], decision[t], d, entry)
+        unpack(raw, h4_pk[int(h4_idx[t])], 2, h4_close[t], decision[t], d, entry)
+        plan = structure_targets(raw, d, entry, wick, atr, p.tick, p.stop_buffer_atr, p.min_r, p.max_atr,
                                  p.stop_distance(atr) if not isna(atr) else 0.0)
-        cols["level_id"][t], cols["entry"][t], cols["wick"][t] = lv.id, lv.price, lv.wick
+        cols["level_id"][t], cols["entry"][t], cols["wick"][t] = lv.id, entry, wick
         for k in ("stop", "tp1", "tp2", "tp3"):
             cols[k][t] = plan[k]
         cols["reason"][t] = plan["reason"] or "signal"
@@ -370,6 +412,7 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
     bid = {k: mid[k] + f * (m15[f"bid_{k}"].to_numpy(float) - mid[k]) for k in mid}
     ask = {k: mid[k] + f * (m15[f"ask_{k}"].to_numpy(float) - mid[k]) for k in mid}
     S = {k: sig[k].tolist() for k in ("signal", "dir", "level_id", "entry", "stop", "tp1", "tp2", "tp3")}
+    S["order"] = sig["order"].tolist() if "order" in sig else ["limit"] * len(sig)
     key = {"o": "open", "h": "high", "l": "low", "c": "close"}
     slip = broker.slippage
 
@@ -403,7 +446,9 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
             seg_start = 0
             if pos is None:
                 L = pending["entry"]
-                if d * (ent["open"][t] - L) <= 0:           # opens through the limit: filled at the open
+                if pending["order"] == "market":            # a market order fills at the open, with slippage
+                    fill, seg_start = ent["open"][t] + d * slip, 0
+                elif d * (ent["open"][t] - L) <= 0:         # opens through the limit: filled at the open
                     fill, seg_start = ent["open"][t], 0
                 else:
                     fill = None
@@ -413,8 +458,9 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
                             fill, seg_start = L, i - 1
                             break
                 if fill is not None:
-                    # R is measured against the PLANNED risk (limit to stop, always > 0), the unit a trader
-                    # sizes with. A gap fill can make the actual risk smaller, or nil.
+                    # R is measured against the PLANNED risk (limit, or the signal close for a market
+                    # order, to the stop; always > 0), the unit a trader sizes with. A gap fill can make
+                    # the actual risk smaller, or nil.
                     planned = d * (pending["entry"] - pending["stop"])
                     fill_risk = d * (fill - pending["stop"])
                     pos = {**pending, "fill": fill, "fill_bar": t, "fill_time": m15["time"].iat[t], "risk": planned,
@@ -467,7 +513,7 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
         can_enter = in_test[t] and pos is None and pending is None and submitted_signal != t
         if can_enter and S["signal"][t]:
             submitted_signal = t
-            pending = {"signal_bar": t, "signal_time": m15["time"].iat[t], "dir": int(S["dir"][t]),
+            pending = {"signal_bar": t, "signal_time": m15["time"].iat[t], "dir": int(S["dir"][t]), "order": S["order"][t],
                        "level_id": int(S["level_id"][t]), "entry": S["entry"][t], "stop": S["stop"][t],
                        "tp1": S["tp1"][t], "tp2": S["tp2"][t], "tp3": S["tp3"][t]}
             counts["submitted"] += 1
