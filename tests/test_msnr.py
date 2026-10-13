@@ -53,9 +53,9 @@ def test_flip_levels_are_entered_only_in_flip_or_both_mode():
     assert st.touch_pick([cand, fresh], 1, 101.0, st.ENTRY_STATES["both"]) is cand  # the nearer one
 
 
-@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
-def test_a_small_group_runs_every_confluence_combination(monkeypatch):
-    monkeypatch.setattr(ms, "DESIGN", {**ms.DESIGN, "level_type": ["both"], "h4_mode": ["against"], "stop_atr": [0.0]})
+@pytest.fixture
+def short_window(monkeypatch):
+    """Six months of candles in place of 2015-2023, so a group runs in seconds."""
     monkeypatch.setattr(ms, "PERIODS", {"train": ("2023-11-01", "2024-01-01"), "val": ("2024-01-01", "2024-03-01")})
     monkeypatch.setattr(ms, "YEARS", {"train": (2023,), "val": (2024,)})
     hist = data.load("M15", start="2023-06-01", end="2024-03-02")
@@ -63,9 +63,15 @@ def test_a_small_group_runs_every_confluence_combination(monkeypatch):
     monkeypatch.setattr(ms, "_M15", hist[hist["time"] >= pd.Timestamp("2023-09-01", tz="UTC")].reset_index(drop=True))
     for f in (ms._chart, ms._h4, ms._inputs):
         f.cache_clear()
-    rows = pd.DataFrame(ms.evaluate_group("1H", 5, "close_back"))
+    yield
     for f in (ms._chart, ms._h4, ms._inputs):
         f.cache_clear()
+
+
+@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
+def test_a_small_group_runs_every_confluence_combination(short_window):
+    small = ms.Study("T", "search_s1", "test", {**ms.DESIGN, "level_type": ["both"], "h4_mode": ["against"], "stop_atr": [0.0]})
+    rows = pd.DataFrame(ms.evaluate_group("1H", 5, "close_back", small))
     assert len(rows) == 2 ** len(ms.FILTERS)
     none = rows[~rows[ms.FILTERS].any(axis=1)].iloc[0]
     # A filter only removes trades: every combination trades at most as often as no filter.
@@ -83,7 +89,8 @@ def _fake_results(tmp_path):
         for combo in [(False,) * 5, (True, False, True, False, False), (False, True, False, True, True)]:
             rows.append({**design, **dict(zip(ms.FILTERS, combo)), "train_trades": int(rng.integers(50, 400)),
                          "train_expectancy_R": rng.normal(-0.2, 0.2), "train_sqn": rng.normal(-1, 1),
-                         "val_trades": int(rng.integers(50, 500)), "val_expectancy_R": rng.normal(-0.2, 0.2)})
+                         "val_trades": int(rng.integers(50, 500)), "val_expectancy_R": rng.normal(-0.2, 0.2),
+                         "val_win_rate": rng.uniform(0.2, 0.8)})
     trials = pd.DataFrame(rows)
     finalists = trials.head(3).assign(val_net_trades=[150, 90, 300], val_net_expectancy_R=[0.05, -0.1, -0.3],
                                       val_net_profit_factor=[1.1, 0.8, 0.6], val_net_ci_low=[-0.05, -0.3, -0.4],
@@ -106,3 +113,54 @@ def test_the_admin_result_builds_from_the_files_and_is_json(tmp_path):
     params = {r["param"] for r in run["detail"]["optimization"]["importance"]}
     assert {"chart_tf", "entry_mode", "level_type", "d1"} <= params      # text choices are ranked too
     assert "## Finalists on validation" in run["report_md"]
+
+
+
+def test_fixed_plan_targets_a_multiple_of_the_risk():
+    p = st.StrategyParams(stop_atr=3.0, target_r=0.5)
+    plan = st.fixed_plan(1, 100.0, 99.0, 2.0, p)          # stop 6 below, target half of that above
+    assert plan["stop"] == pytest.approx(94.0) and plan["tp2"] == pytest.approx(103.0) and plan["reason"] == ""
+    short = st.fixed_plan(-1, 100.0, 101.0, 2.0, p)
+    assert short["stop"] == pytest.approx(106.0) and short["tp2"] == pytest.approx(97.0)
+    structural = st.fixed_plan(1, 100.0, 99.0, 2.0, st.StrategyParams(target_r=0.5))   # beyond the wick: 99 - 0.4
+    assert structural["stop"] == pytest.approx(98.6) and structural["tp2"] == pytest.approx(100.7)
+
+
+@pytest.mark.skipif(not data.dataset_path("M15").exists(), reason="no local M15 cache")
+def test_derived_exit_shapes_match_signals_built_for_each_shape(short_window):
+    chart = ms._chart("1H")
+    h1, *_ = ms._inputs("1H", 5)
+    design = {"chart_tf": "1H", "swing_len": 5, "level_type": "fresh", "entry_mode": "limit", "h4_mode": "with"}
+    base = st.signals(chart, ms._params({**design, "stop_atr": 1.0, "target_r": 1.0}), h1, ms._h4("1H"))
+    assert base["signal"].sum() > 0
+    for stop_atr, target_r in ((1.5, 0.25), (5.0, 0.75)):
+        direct = st.signals(chart, ms._params({**design, "stop_atr": stop_atr, "target_r": target_r}), h1, ms._h4("1H"))
+        derived = ms.with_fixed_exits(base, stop_atr, target_r)
+        on = direct["signal"].to_numpy(bool)
+        assert (derived["signal"].to_numpy(bool) == on).all()
+        for col in ("entry", "stop", "tp2"):
+            np.testing.assert_array_equal(derived.loc[on, col].to_numpy(float), direct.loc[on, col].to_numpy(float))
+    small = ms.Study("T2", "search_s2", "test", {**design, **{k: [v] for k, v in design.items()},
+                                                  "stop_atr": [1.5, 5.0], "target_r": [0.25, 0.75]},
+                     derived=("stop_atr", "target_r"))
+    rows = pd.DataFrame(ms.evaluate_group("1H", 5, "limit", small))
+    assert len(rows) == 4 * 2 ** len(ms.FILTERS) and set(rows["target_r"]) == {0.25, 0.75}
+    # A small target is hit more often than a far one.
+    plain = rows[~rows[ms.FILTERS].any(axis=1)].groupby("target_r")["train_win_rate"].mean()
+    assert plain[0.25] > plain[0.75]
+
+
+def test_the_s2_admin_result_shows_stop_by_target(tmp_path):
+    import json
+
+    folder = _fake_results(tmp_path)
+    for name in ("trials.csv", "finalists.csv"):
+        df = pd.read_csv(folder / name)
+        df.insert(df.columns.get_loc("stop_atr") + 1, "target_r", np.resize([0.25, 0.5, 1.0], len(df)))
+        df["stop_atr"] = np.resize([1.5, 3.0, 5.0], len(df))
+        df.to_csv(folder / name, index=False)
+    run = jobs._s1_result(folder, {}, "results/S2", "S2")
+    json.dumps(run, allow_nan=False)
+    assert run["kind"] == "search_s2" and run["title"].startswith("S2 · Short target, long stop")
+    titles = [m["title"] for m in run["detail"]["optimization"]["heatmaps"]]
+    assert "Validation win rate: stop (ATR) × target (R)" in titles

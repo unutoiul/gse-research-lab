@@ -43,15 +43,16 @@ SCHEMA = {
          "path": ("conservative", "tradingview"), "stop_buffer_atr": {"float": [0.05, 3.0]},
          "min_r": {"float": [0.5, 5.0]}, "max_atr": {"float": [1.0, 20.0]},
          "h4_mode": ("with", "against"), "stop_usd": {"float": [0.0, 200.0]}, "stop_atr": {"float": [0.0, 20.0]},
-         "chart_tf": ("15m", "1H"), "d1_mode": ("off", "with", "against"), "entry_mode": ("limit", "rejection", "close_back")},
+         "chart_tf": ("15m", "1H"), "d1_mode": ("off", "with", "against"), "entry_mode": ("limit", "rejection", "close_back"), "target_r": {"float": [0.0, 5.0]}},
         {"swing_len": 10, "h4_swing_len": 10, "period": "train", "costs": "net", "path": "conservative",
          "stop_buffer_atr": strategy.STOP_BUFFER_ATR, "min_r": strategy.MIN_R, "max_atr": strategy.MAX_ATR,
-         "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0, "chart_tf": "15m", "d1_mode": "off", "entry_mode": "limit"}),
+         "h4_mode": "with", "stop_usd": 0.0, "stop_atr": 0.0, "chart_tf": "15m", "d1_mode": "off", "entry_mode": "limit", "target_r": 0.0}),
     "search_o1": ({"trials": [20, 400]}, {"trials": 400}),
     "search_o2": ({}, {}),
     "search_o3": ({}, {}),
     "study_t1": ({}, {}),
     "search_s1": ({}, {}),
+    "search_s2": ({}, {}),
 }
 
 
@@ -301,7 +302,7 @@ def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, Non
     p = strategy.StrategyParams(swing_len=params["swing_len"], h4_swing_len=params["h4_swing_len"],
                                 stop_buffer_atr=params["stop_buffer_atr"], min_r=params["min_r"], max_atr=params["max_atr"],
                                 h4_mode=params["h4_mode"], stop_usd=params["stop_usd"], stop_atr=params["stop_atr"],
-                                d1_mode=params["d1_mode"], entry_mode=params["entry_mode"])
+                                d1_mode=params["d1_mode"], entry_mode=params["entry_mode"], target_r=params["target_r"])
     history, m15 = m15, m15[m15["time"] >= pd.Timestamp(WARMUP, tz="UTC")].reset_index(drop=True)
     chart = m15 if params["chart_tf"] == "15m" else data.aggregate(m15, params["chart_tf"])
     progress(0.15, f"{params['chart_tf']} levels, 1H/4H snapshots and signals")
@@ -332,7 +333,7 @@ def run_strategy_backtest(params: dict, work: Path, progress) -> tuple[dict, Non
               "trades": trade_table(trades, STRATEGY_TRADE_COLS)}
     stop = (f"stop ${p.stop_usd:g}" if p.stop_usd > 0 else f"stop {p.stop_atr:g} ATR" if p.stop_atr > 0
             else f"stop +{p.stop_buffer_atr:g} ATR")
-    d1_text = (f" · {p.d1_mode} 1D" if p.d1_mode != "off" else "") + (f" · {p.entry_mode.replace('_', ' ')} entry" if p.entry_mode != "limit" else "")
+    d1_text = (f" · {p.d1_mode} 1D" if p.d1_mode != "off" else "") + (f" · {p.entry_mode.replace('_', ' ')} entry" if p.entry_mode != "limit" else "") + (f" · target {p.target_r:g}R" if p.target_r > 0 else "")
     title = (f"Strategy v4.0 · {params['chart_tf']} chart {p.swing_len} / H4 {p.h4_swing_len} · {p.h4_mode} 4H{d1_text} · {stop}, "
              f"≥{p.min_r:g}R, ≤{p.max_atr:g} ATR · {params['period']} · {params['costs']}")
     report = "\n".join([f"# {title}", "", f"> {experiments.PROVISIONAL}", "",
@@ -512,27 +513,41 @@ def _t1_result(out: Path, params: dict, source: str | None = None) -> dict:
 
 
 def run_search_s1(params: dict, work: Path, progress) -> tuple[dict, None]:
-    out = msnr_search.run_search(out_dir=work, progress=progress)
+    out = msnr_search.run_search(out_dir=work, progress=progress, study="S1")
     return _s1_result(out, params), None
 
 
-S1_COLS = [*msnr_search.PARAMS, "train_trades", "train_expectancy_R", "train_sqn", "val_net_trades", "val_net_expectancy_R",
-           "val_net_profit_factor", "val_net_ci_low", "val_years_positive", "val_half_expectancy_R", "val_gross_expectancy_R",
-           "verdict"]
+def run_search_s2(params: dict, work: Path, progress) -> tuple[dict, None]:
+    out = msnr_search.run_search(out_dir=work, progress=progress, study="S2")
+    return _s1_result(out, params, study="S2"), None
 
 
-def _s1_result(out: Path, params: dict, source: str | None = None) -> dict:
+SEARCH_COLS = ["train_trades", "train_win_rate", "train_expectancy_R", "train_sqn", "val_net_trades", "val_net_win_rate",
+               "val_net_expectancy_R", "val_net_profit_factor", "val_net_ci_low", "val_years_positive", "val_half_expectancy_R",
+               "val_gross_expectancy_R", "verdict"]
+SEARCH_MAPS = {
+    "S1": [("entry_mode", "level_type", "val_expectancy_R", "Validation after costs: level type × entry"),
+           ("h4_mode", "chart_tf", "val_expectancy_R", "Validation after costs: chart × 4H direction"),
+           ("stop_atr", "swing_len", "val_expectancy_R", "Validation after costs: lookback × stop (0 = structural)")],
+    "S2": [("target_r", "stop_atr", "val_expectancy_R", "Validation after costs: stop (ATR) × target (R)"),
+           ("target_r", "stop_atr", "val_win_rate", "Validation win rate: stop (ATR) × target (R)"),
+           ("entry_mode", "level_type", "val_expectancy_R", "Validation after costs: level type × entry")],
+}
+
+
+def _s1_result(out: Path, params: dict, source: str | None = None, study: str = "S1") -> dict:
+    """The admin run of a Malaysian SnR search (S1, or S2: short target, long stop)."""
     ms = msnr_search
+    spec = ms.STUDIES[study]
     trials = pd.read_csv(out / "trials.csv")
     finalists = pd.read_csv(out / "finalists.csv")
     eligible = trials[trials["train_trades"] >= ms.MIN_TRAIN_TRADES]
-    pine = np.logical_and.reduce([trials[k] == v for k, v in ms.PINE.items()])
+    ref = (np.logical_and.reduce([trials[k] == v for k, v in spec.reference.items()]) if spec.reference
+           else np.zeros(len(trials), dtype=bool))
     best = finalists.iloc[0].to_dict() if len(finalists) else None
-    maps = [("entry_mode", "level_type", "val_expectancy_R", "Validation after costs: level type × entry", None),
-            ("h4_mode", "chart_tf", "val_expectancy_R", "Validation after costs: chart × 4H direction", None),
-            ("stop_atr", "swing_len", "val_expectancy_R", "Validation after costs: lookback × stop (0 = structural)", None)]
-    opt = optimization(trials, ms.PARAMS, "train_expectancy_R", "val_expectancy_R", "train_trades", "val_trades",
-                       pd.Series(pine), clean(best), maps, ms.MIN_TRAIN_TRADES)
+    maps = [(*m, None) for m in SEARCH_MAPS[study]]
+    opt = optimization(trials, spec.params, "train_expectancy_R", "val_expectancy_R", "train_trades", "val_trades",
+                       pd.Series(ref, index=trials.index), clean(best), maps, ms.MIN_TRAIN_TRADES)
     counts = finalists["verdict"].value_counts().to_dict() if len(finalists) else {}
     status = next((s for s in ("candidate", "watch", "rejected", "inconclusive") if counts.get(s)), "inconclusive")
     line = ms.luck_line(len(eligible))
@@ -559,7 +574,8 @@ def _s1_result(out: Path, params: dict, source: str | None = None) -> dict:
         detail["diagnostics"]["notes"].insert(0, "Diagnostics below are for the first finalist, validation period, OANDA costs.")
         detail["trades"] = trade_table(bt, STRATEGY_TRADE_COLS)
         series = {"first finalist · validation · net": equity(bt)}
-    return {"kind": "search_s1", "title": f"S1 · Malaysian SnR with confluences · {len(trials):,} combinations", "params": params,
+    title = {"S1": "Malaysian SnR with confluences", "S2": "Short target, long stop"}[study]
+    return {"kind": spec.kind, "title": f"{study} · {title} · {len(trials):,} combinations", "params": params,
             "summary": clean({"combinations": len(trials), "eligible": len(eligible),
                               "positive_val": int((eligible["val_expectancy_R"] > 0).sum()),
                               "positive_both": int(((eligible["train_expectancy_R"] > 0) & (eligible["val_expectancy_R"] > 0)).sum()),
@@ -567,14 +583,15 @@ def _s1_result(out: Path, params: dict, source: str | None = None) -> dict:
                               "best_val_net_expectancy_R": finalists["val_net_expectancy_R"].max() if len(finalists) else None,
                               "verdict": status}),
             "equity": {"series": series} if series else None,
-            "tables": {"Finalists judged on validation": table(finalists[[c for c in S1_COLS if c in finalists]], index=False)},
+            "tables": {"Finalists judged on validation": table(finalists[[c for c in [*spec.params, *SEARCH_COLS] if c in finalists]],
+                                                                index=False)},
             "detail": clean(detail), "report_md": (out / "report.md").read_text(encoding="utf-8"),
             "provenance": _provenance({"source": source} if source else None)}
 
 
 RUNNERS = {"data_update": run_data_update, "r001": run_r001, "strategy_backtest": run_strategy_backtest,
            "search_o1": run_search_o1, "search_o2": run_search_o2, "search_o3": run_search_o3, "study_t1": run_study_t1,
-           "search_s1": run_search_s1}
+           "search_s1": run_search_s1, "search_s2": run_search_s2}
 
 
 def committed_results() -> list[dict]:
@@ -591,6 +608,7 @@ def committed_results() -> list[dict]:
         out.append(_o3_result(root / "O3", {}, "results/O3"))
     if (root / "T1" / "summary.csv").exists():
         out.append(_t1_result(root / "T1", {}, "results/T1"))
-    if (root / "S1" / "trials.csv").exists():
-        out.append(_s1_result(root / "S1", {}, "results/S1"))
+    for study in ("S1", "S2"):
+        if (root / study / "trials.csv").exists():
+            out.append(_s1_result(root / study, {}, f"results/{study}", study))
     return out

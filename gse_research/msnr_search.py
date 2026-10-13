@@ -18,6 +18,11 @@ Confluences (each on or off, applied to the signal candles):
 - mtf: the chart bias and the next two timeframes' biases all in the trade direction.
 First touch only, always: fresh and flip levels are untouched until the entry.
 
+Study S2 (short target, long stop) runs the same designs and confluences with a fixed stop of
+1.5 / 3 / 5 chart ATR and a fixed target of 0.25 / 0.5 / 0.75 / 1 times that risk, in place of
+the website's structure target. Entries do not depend on the exits, so each design's signals
+are built once and the twelve exit shapes are derived from them (`with_fixed_exits`).
+
 Every combination is scored at OANDA costs on train (2016-2018) and validation (2019-2022).
 Train alone picks the finalists (most consistent: highest SQN); validation judges them, with
 the interval widened for the number of finalists. The test period stays locked.
@@ -29,6 +34,7 @@ import itertools
 import json
 import math
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -53,6 +59,34 @@ COSTS = {"net": st.Broker(slippage=0.10, spread_scale=1.0), "half": st.Broker(sl
 MIN_TRAIN_TRADES, MIN_VAL_TRADES, FINALISTS = 100, 100, 20
 PINE = {"chart_tf": "15m", "swing_len": 10, "level_type": "fresh", "entry_mode": "limit", "h4_mode": "with", "stop_atr": 0.0,
         **{f: False for f in FILTERS}}
+GROUP = ("chart_tf", "swing_len", "entry_mode")   # one worker task: one chart, lookback and entry
+
+
+@dataclass(frozen=True)
+class Study:
+    name: str
+    kind: str
+    title: str
+    design: dict
+    derived: tuple = ()                 # exit keys derived from the signals (fixed stop and target)
+    reference: dict = field(default_factory=dict)
+    reference_title: str = ""
+
+    @property
+    def params(self) -> list[str]:
+        return [*self.design, *FILTERS]
+
+
+S1 = Study("S1", "search_s1", "Malaysian SnR with confluences (GSE Strategy v4.0 research variants)", DESIGN,
+           reference=PINE, reference_title="The Pine strategy as written (15m, lookback 10, fresh, limit, with 4H, no filters)")
+S2 = Study("S2", "search_s2", "Short target, long stop (Malaysian SnR designs with confluences)",
+           {**{k: v for k, v in DESIGN.items() if k != "stop_atr"}, "stop_atr": [1.5, 3.0, 5.0],
+            "target_r": [0.25, 0.5, 0.75, 1.0]}, derived=("stop_atr", "target_r"))
+STUDIES = {"S1": S1, "S2": S2}
+
+
+def _study(study) -> Study:
+    return study if isinstance(study, Study) else STUDIES[study]
 
 _HIST: pd.DataFrame | None = None    # M15 from D1_WARMUP: daily and higher biases settle before 2016
 _M15: pd.DataFrame | None = None
@@ -116,8 +150,20 @@ def filter_masks(sig: pd.DataFrame, d1: np.ndarray, up: np.ndarray, mid: np.ndar
 
 
 def _params(design: dict) -> st.StrategyParams:
-    return st.StrategyParams(swing_len=design["swing_len"], h4_mode=design["h4_mode"], stop_atr=design["stop_atr"],
-                             entry_mode=design["entry_mode"], level_type=design["level_type"])
+    return st.StrategyParams(swing_len=int(design["swing_len"]), h4_mode=design["h4_mode"], stop_atr=float(design["stop_atr"]),
+                             entry_mode=design["entry_mode"], level_type=design["level_type"],
+                             target_r=float(design.get("target_r", 0.0)))
+
+
+def with_fixed_exits(sig: pd.DataFrame, stop_atr: float, target_r: float, tick: float = 0.01) -> pd.DataFrame:
+    """A fixed-exit design's signals from the same entries: the stop stop_atr chart ATRs from the
+    entry, the target target_r times that risk, rounded exactly as strategy.fixed_plan rounds them."""
+    d = sig["dir"].to_numpy(float)
+    entry, atr = sig["entry"].to_numpy(float), sig["atr"].to_numpy(float)
+    stop = st.side_round(entry - d * (stop_atr * atr), tick, d)
+    risk = d * (entry - stop)
+    tp = st.side_round(entry + d * target_r * risk, tick, d)
+    return sig.assign(stop=stop, tp2=tp)
 
 
 def _score(trades: pd.DataFrame, weeks: float, period: str, prefix: str) -> dict:
@@ -130,28 +176,36 @@ def _score(trades: pd.DataFrame, weeks: float, period: str, prefix: str) -> dict
     return row
 
 
-def evaluate_group(tf: str, swing: int, entry_mode: str) -> list[dict]:
+def evaluate_group(tf: str, swing: int, entry_mode: str, study: Study | str = S1) -> list[dict]:
     """Every design with this chart, lookback and entry, each under all 32 confluence combinations."""
+    study = _study(study)
     chart = _chart(tf)
     h1, d1, up, mid = _inputs(tf, swing)
+    inner = [k for k in study.design if k not in GROUP and k not in study.derived]
     rows = []
-    for level_type, h4_mode, stop_atr in itertools.product(DESIGN["level_type"], DESIGN["h4_mode"], DESIGN["stop_atr"]):
-        design = {"chart_tf": tf, "swing_len": swing, "level_type": level_type, "entry_mode": entry_mode,
-                  "h4_mode": h4_mode, "stop_atr": stop_atr}
-        sig = st.signals(chart, _params(design), h1, _h4(tf))
-        masks, base = filter_masks(sig, d1, up, mid), sig["signal"].to_numpy(bool)
-        for combo in itertools.product([False, True], repeat=len(FILTERS)):
-            on = dict(zip(FILTERS, combo))
-            keep = base.copy()
-            for f, active in on.items():
-                if active:
-                    keep &= masks[f]
-            filtered = sig.assign(signal=keep)
-            row = {**design, **on}
-            for period, (a, b) in PERIODS.items():
-                trades, _ = st.simulate(chart, filtered, a, b, COSTS["net"])
-                row.update(_score(trades, (pd.Timestamp(b) - pd.Timestamp(a)).days / 7, period, period))
-            rows.append(row)
+    for values in itertools.product(*(study.design[k] for k in inner)):
+        design = {"chart_tf": tf, "swing_len": swing, "entry_mode": entry_mode, **dict(zip(inner, values))}
+        if study.derived:  # entries once (any fixed exit), then each exit shape from them
+            sig0 = st.signals(chart, _params({**design, "stop_atr": 1.0, "target_r": 1.0}), h1, _h4(tf))
+            shapes = [(dict(zip(study.derived, v)), with_fixed_exits(sig0, *v))
+                      for v in itertools.product(*(study.design[k] for k in study.derived))]
+        else:
+            sig0 = st.signals(chart, _params(design), h1, _h4(tf))
+            shapes = [({}, sig0)]
+        masks, base = filter_masks(sig0, d1, up, mid), sig0["signal"].to_numpy(bool)
+        for exits, sig in shapes:
+            for combo in itertools.product([False, True], repeat=len(FILTERS)):
+                on = dict(zip(FILTERS, combo))
+                keep = base.copy()
+                for f, active in on.items():
+                    if active:
+                        keep &= masks[f]
+                filtered = sig.assign(signal=keep)
+                row = {**design, **exits, **on}
+                for period, (a, b) in PERIODS.items():
+                    trades, _ = st.simulate(chart, filtered, a, b, COSTS["net"])
+                    row.update(_score(trades, (pd.Timestamp(b) - pd.Timestamp(a)).days / 7, period, period))
+                rows.append({k: row[k] for k in study.params} | {k: v for k, v in row.items() if k not in study.params})
     return rows
 
 
@@ -159,10 +213,12 @@ def _run_group(key: tuple) -> list[dict]:
     return evaluate_group(*key)
 
 
-def run_search(workers: int | None = None, out_dir: Path | None = None, progress=None) -> Path:
+def run_search(workers: int | None = None, out_dir: Path | None = None, progress=None, study: Study | str = "S1") -> Path:
+    study = _study(study)
+    design = study.design
     # 15m groups first: they are the slow ones, so no worker is left with a long tail.
-    groups = [(tf, s, e) for tf in DESIGN["chart_tf"] for s in DESIGN["swing_len"] for e in DESIGN["entry_mode"]]
-    total = math.prod(len(v) for v in DESIGN.values()) * 2 ** len(FILTERS)
+    groups = [(tf, s, e, study.name) for tf in design["chart_tf"] for s in design["swing_len"] for e in design["entry_mode"]]
+    total = math.prod(len(v) for v in design.values()) * 2 ** len(FILTERS)
     workers = min(workers or resources.default_workers(), len(groups))
     rows: list[dict] = []
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as pool:
@@ -175,8 +231,8 @@ def run_search(workers: int | None = None, out_dir: Path | None = None, progress
     if progress:
         progress(0.88, "finalists on validation")
     _init()
-    finalists = judge(trials)
-    out_dir = out_dir or data.ROOT / "results" / "S1"
+    finalists = judge(trials, study)
+    out_dir = out_dir or data.ROOT / "results" / study.name
     out_dir.mkdir(parents=True, exist_ok=True)
     trials.to_csv(out_dir / "trials.csv", index=False)
     finalists.to_csv(out_dir / "finalists.csv", index=False)
@@ -184,11 +240,12 @@ def run_search(workers: int | None = None, out_dir: Path | None = None, progress
     if best is not None:
         detail_trades(best).to_csv(out_dir / "best_trades.csv", index=False)
     manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]
-    prov = {"git": experiments._git(), "dataset_sha256": manifest["sha256"], "design": DESIGN, "filters": FILTERS,
+    prov = {"git": experiments._git(), "dataset_sha256": manifest["sha256"], "study": study.name, "design": design,
+            "filters": FILTERS,
             "costs": {k: vars(v) for k, v in COSTS.items()}, "min_train_trades": MIN_TRAIN_TRADES,
             "min_val_trades": MIN_VAL_TRADES, "finalists": FINALISTS, "status": experiments.PROVISIONAL}
     (out_dir / "provenance.json").write_text(json.dumps(prov, indent=2, default=str), encoding="utf-8")
-    (out_dir / "report.md").write_text(report(trials, finalists, prov), encoding="utf-8")
+    (out_dir / "report.md").write_text(report(trials, finalists, prov, study), encoding="utf-8")
     return out_dir
 
 
@@ -198,15 +255,14 @@ def luck_line(n: int) -> float:
     return math.sqrt(2 * math.log(n)) if n > 1 else 0.0
 
 
-def _design(row: dict) -> dict:
-    return {k: (row[k].item() if hasattr(row[k], "item") else row[k]) for k in PARAMS}
+def _design(row: dict, study: Study) -> dict:
+    return {k: (row[k].item() if hasattr(row[k], "item") else row[k]) for k in study.params}
 
 
 def _signals_for(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     chart = _chart(cfg["chart_tf"])
     h1, d1, up, mid = _inputs(cfg["chart_tf"], int(cfg["swing_len"]))
-    sig = st.signals(chart, _params({**cfg, "swing_len": int(cfg["swing_len"]), "stop_atr": float(cfg["stop_atr"])}), h1,
-                     _h4(cfg["chart_tf"]))
+    sig = st.signals(chart, _params(cfg), h1, _h4(cfg["chart_tf"]))
     keep = sig["signal"].to_numpy(bool).copy()
     masks = filter_masks(sig, d1, up, mid)
     for f in FILTERS:
@@ -215,15 +271,16 @@ def _signals_for(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     return chart, sig.assign(signal=keep)
 
 
-def judge(trials: pd.DataFrame) -> pd.DataFrame:
+def judge(trials: pd.DataFrame, study: Study | str = S1) -> pd.DataFrame:
     """Train picks the finalists; validation judges each at three cost levels, year by year."""
     eligible = trials[trials["train_trades"] >= MIN_TRAIN_TRADES]
     top = eligible.sort_values("train_sqn", ascending=False).head(FINALISTS)
     top = top.sort_values(["chart_tf", "swing_len"], kind="stable")  # reuse the level inputs between finalists
     level = 1 - 0.10 / max(1, len(top))  # one-sided 5% overall across the finalists (Bonferroni)
+    study = _study(study)
     rows = []
     for _, r in top.iterrows():
-        cfg = _design(r.to_dict())
+        cfg = _design(r.to_dict(), study)
         chart, sig = _signals_for(cfg)
         a, b = PERIODS["val"]
         row = {**cfg, **{k: r[k] for k in r.index if k.startswith("train_")}}
@@ -263,20 +320,24 @@ def detail_trades(cfg: dict) -> pd.DataFrame:
     return trades
 
 
-def report(trials: pd.DataFrame, finalists: pd.DataFrame, prov: dict) -> str:
+def report(trials: pd.DataFrame, finalists: pd.DataFrame, prov: dict, study: Study | str = S1) -> str:
+    study = _study(study)
+    params = study.params
     md, fmt = experiments._md, experiments._fmt
     eligible = trials[trials["train_trades"] >= MIN_TRAIN_TRADES]
     rho = eligible[["train_expectancy_R", "val_expectancy_R"]].corr(method="spearman").iloc[0, 1] if len(eligible) > 2 else np.nan
     line = luck_line(len(eligible))
-    pine = trials[np.logical_and.reduce([trials[k] == v for k, v in PINE.items()])]
+    ref = trials[np.logical_and.reduce([trials[k] == v for k, v in study.reference.items()])] if study.reference else trials.iloc[:0]
     both = eligible[(eligible["train_expectancy_R"] > 0) & (eligible["val_expectancy_R"] > 0)]
     counts = finalists["verdict"].value_counts().to_dict() if len(finalists) else {}
-    cols = [*PARAMS, "train_trades", "train_expectancy_R", "train_sqn", "val_net_trades", "val_net_expectancy_R",
-            "val_net_profit_factor", "val_net_ci_low", "val_years_positive", "val_gross_expectancy_R", "verdict"]
+    cols = [*params, "train_trades", "train_win_rate", "train_expectancy_R", "train_sqn", "val_net_trades", "val_net_win_rate",
+            "val_net_expectancy_R", "val_net_profit_factor", "val_net_ci_low", "val_years_positive", "val_gross_expectancy_R",
+            "verdict"]
+    cols = [c for c in cols if c in finalists]
     lines = [
-        "# S1 — Malaysian SnR with confluences (GSE Strategy v4.0 research variants)", "",
+        f"# {study.name} — {study.title}", "",
         f"> {prov['status']}", "",
-        f"{len(trials):,} combinations: {math.prod(len(v) for v in DESIGN.values())} trade designs × "
+        f"{len(trials):,} combinations: {math.prod(len(v) for v in study.design.values())} trade designs × "
         f"{2 ** len(FILTERS)} confluence combinations ({', '.join(FILTERS)}). Train 2016–2018 picks, validation "
         "2019–2022 judges, test untouched. OANDA bid/ask + 0.10 slippage; conservative intrabar order.", "",
         f"Git `{prov['git']['commit'][:10]}`{' (dirty)' if prov['git']['dirty'] else ''} · dataset `{prov['dataset_sha256'][:12]}…`", "",
@@ -289,15 +350,21 @@ def report(trials: pd.DataFrame, finalists: pd.DataFrame, prov: dict) -> str:
         f"{line:.1f}. Best training SQN found: {fmt(eligible['train_sqn'].max() if len(eligible) else np.nan)}.",
         f"- Finalists (top {FINALISTS} training SQN), judged on validation: "
         + (", ".join(f"{v} {k}" for k, v in counts.items()) or "none") + ".", "",
-        "## The Pine strategy as written (15m, lookback 10, fresh, limit, with 4H, no filters)", "",
-        md(pine[[*PARAMS, "train_trades", "train_expectancy_R", "val_trades", "val_expectancy_R"]].set_index("chart_tf")), "",
+    ]
+    if study.reference:
+        lines += [f"## {study.reference_title}", "",
+                  md(ref[[*params, "train_trades", "train_expectancy_R", "val_trades", "val_expectancy_R"]].set_index("chart_tf")), ""]
+    lines += [
         "## Finalists on validation", "",
         md(finalists[cols].set_index("chart_tf")) if len(finalists) else "No combination had enough training trades.", "",
         "## What each choice does on average (combinations with enough training trades)", "",
     ]
-    for p in PARAMS:
-        m = eligible.groupby(p).agg(combinations=("val_expectancy_R", "size"), train_R=("train_expectancy_R", "mean"),
-                                    val_R=("val_expectancy_R", "mean"), best_val_R=("val_expectancy_R", "max")).round(3)
+    for p in params:
+        agg = {"combinations": ("val_expectancy_R", "size"), "train_R": ("train_expectancy_R", "mean"),
+               "val_R": ("val_expectancy_R", "mean"), "best_val_R": ("val_expectancy_R", "max")}
+        if "val_win_rate" in eligible:
+            agg["val_win_rate"] = ("val_win_rate", "mean")
+        m = eligible.groupby(p).agg(**agg).round(3)
         lines += [f"### {p}", "", md(m), ""]
     cand = finalists[finalists["verdict"] == "candidate"] if len(finalists) else finalists
     if len(cand):

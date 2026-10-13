@@ -54,6 +54,9 @@ class StrategyParams:
     # Which untouched levels can be entered: "fresh" A/V levels (the Pine), "flip" levels a body closed
     # through and nothing has touched since (flip candidates: Malaysian SnR's "fresh again"), or "both".
     level_type: str = "fresh"
+    # > 0: a fixed target this many times the risk, in place of the website's structure target
+    # (no target rules then: every picked level is a signal).
+    target_r: float = 0.0
 
     def stop_distance(self, atr: float) -> float:
         """Fixed stop distance from the entry, or 0 for the Pine structural stop."""
@@ -174,6 +177,30 @@ def snapshot_valid(source_tf: int, snapshot_close, decision_close) -> bool:
 def target_round(price: float, tick: float, d: int) -> float:
     q = price / tick
     return (math.floor(q + 1e-9) if d == 1 else math.ceil(q - 1e-9)) * tick
+
+
+def side_round(price, tick: float, d):
+    """target_round for arrays: the same arithmetic, element by element."""
+    q = np.asarray(price, dtype=float) / tick
+    return np.where(np.asarray(d) == 1, np.floor(q + 1e-9), np.ceil(q - 1e-9)) * tick
+
+
+def fixed_plan(d: int, entry: float, wick: float, atr: float, p: "StrategyParams") -> dict:
+    """Research variant: the stop as the strategy places it (fixed distance, or beyond the wick),
+    and a target p.target_r times the risk instead of the website's structure target."""
+    plan = {"stop": math.nan, "tp1": math.nan, "tp2": math.nan, "tp3": math.nan, "reason": ""}
+    dist = p.stop_distance(atr) if not isna(atr) else 0.0
+    if dist > 0:
+        plan["stop"] = target_round(entry - d * dist, p.tick, d)
+    elif not isna(wick) and not isna(atr):
+        invalidation = min(entry, wick) if d == 1 else max(entry, wick)
+        plan["stop"] = target_round(invalidation - d * max(p.tick, atr * p.stop_buffer_atr), p.tick, d)
+    risk = d * (entry - plan["stop"])
+    if not risk > 0:
+        plan["reason"] = "missing_invalidation"
+        return plan
+    plan["tp2"] = target_round(entry + d * p.target_r * risk, p.tick, d)
+    return plan
 
 
 def target_add(raw: list, d: int, entry: float, price: float, strength: int, major: bool, source_key: int) -> None:
@@ -323,7 +350,8 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
     h4_pk, h4_idx, h4_close, dir_seen = h4 if h4 is not None else h4_inputs(m15, p)
     decision = _ms(m15["close_time"])
     n = len(m15)
-    cols = {k: [None] * n for k in ("dir", "h4_dir", "d1", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason")}
+    cols = {k: [None] * n for k in ("dir", "h4_dir", "d1", "level_id", "entry", "wick", "stop", "tp1", "tp2", "tp3", "reason",
+                                    "atr")}
     confirm = p.entry_mode in ("rejection", "close_back")
     cols["order"] = ["market" if confirm else "limit"] * n
     O, H, Lo = (m15[k].to_numpy(float) for k in ("open", "high", "low"))
@@ -336,6 +364,7 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
 
     def hook(t, levels, eqh, eql, pdh, pdl, pwh, pwl, atr, c):
         was_fresh, track["fresh"] = track["fresh"], {lv.id for lv in levels if lv.state in states and lv.touches == 0}
+        cols["atr"][t] = atr
         h4 = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
         d = h4 * flip
         cols["dir"][t], cols["h4_dir"][t] = d, h4
@@ -367,12 +396,15 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
                 return
             # A flip candidate has no wick yet: its invalidation is the level itself.
             entry, wick = lv.price, lv.price if isna(lv.wick) else lv.wick
-        raw: list = []
-        unpack(raw, packet(levels, eqh, eql, pdh, pdl, pwh, pwl, p.tick), 0, decision[t], decision[t], d, entry)
-        unpack(raw, h1_pk[int(h1_idx[t])], 1, h1_close[t], decision[t], d, entry)
-        unpack(raw, h4_pk[int(h4_idx[t])], 2, h4_close[t], decision[t], d, entry)
-        plan = structure_targets(raw, d, entry, wick, atr, p.tick, p.stop_buffer_atr, p.min_r, p.max_atr,
-                                 p.stop_distance(atr) if not isna(atr) else 0.0)
+        if p.target_r > 0:
+            plan = fixed_plan(d, entry, wick, atr, p)
+        else:
+            raw: list = []
+            unpack(raw, packet(levels, eqh, eql, pdh, pdl, pwh, pwl, p.tick), 0, decision[t], decision[t], d, entry)
+            unpack(raw, h1_pk[int(h1_idx[t])], 1, h1_close[t], decision[t], d, entry)
+            unpack(raw, h4_pk[int(h4_idx[t])], 2, h4_close[t], decision[t], d, entry)
+            plan = structure_targets(raw, d, entry, wick, atr, p.tick, p.stop_buffer_atr, p.min_r, p.max_atr,
+                                     p.stop_distance(atr) if not isna(atr) else 0.0)
         cols["level_id"][t], cols["entry"][t], cols["wick"][t] = lv.id, entry, wick
         for k in ("stop", "tp1", "tp2", "tp3"):
             cols[k][t] = plan[k]

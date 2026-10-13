@@ -12,8 +12,9 @@
         study O2: GSE Strategy v4.0 swing lookbacks, written to results/O2/
     python -m gse_research targets-study [--workers N]
         study O3: GSE Strategy v4.0 stop and target constants, written to results/O3/
-    python -m gse_research msnr-search [--workers N]
-        study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/
+    python -m gse_research msnr-search [--study S1|S2] [--workers N]
+        study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
+        study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
     python -m gse_research worker [--once] [--poll 60]
         run jobs queued from the website admin (Research tab)
     python -m gse_research run-job <job id>
@@ -55,7 +56,8 @@ def main() -> None:
     sub.add_parser("timeframes", help="study T1: the Golden Zone entry on 15m, 1H and 4H")
     ts = sub.add_parser("targets-study", help="study O3: GSE Strategy v4.0 stop and target constants")
     ts.add_argument("--workers", type=int, default=None)
-    ms = sub.add_parser("msnr-search", help="study S1: Malaysian SnR with confluences")
+    ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
+    ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
     wk = sub.add_parser("worker", help="run jobs queued from the website admin")
     wk.add_argument("--once", action="store_true", help="exit when the queue is empty")
@@ -97,7 +99,7 @@ def main() -> None:
         out = strategy_study.run_targets_study(args.workers)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "msnr-search":
-        out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True))
+        out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "worker":
         worker.run_worker(args.once, args.poll)
