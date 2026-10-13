@@ -71,3 +71,38 @@ def test_a_small_group_runs_every_confluence_combination(monkeypatch):
     # A filter only removes trades: every combination trades at most as often as no filter.
     assert (rows["train_trades"] <= none["train_trades"]).all() and (rows["val_trades"] <= none["val_trades"]).all()
     assert none["train_trades"] > 0
+
+
+def _fake_results(tmp_path):
+    """A small S1 result folder written the way run_search writes it (text columns read back as pandas str)."""
+    rng = np.random.default_rng(3)
+    rows = []
+    for design in [dict(zip(ms.DESIGN, v)) for v in
+                   [("15m", 10, "fresh", "limit", "with", 0.0), ("1H", 5, "flip", "close_back", "against", 1.5),
+                    ("15m", 3, "both", "rejection", "with", 3.0)]]:
+        for combo in [(False,) * 5, (True, False, True, False, False), (False, True, False, True, True)]:
+            rows.append({**design, **dict(zip(ms.FILTERS, combo)), "train_trades": int(rng.integers(50, 400)),
+                         "train_expectancy_R": rng.normal(-0.2, 0.2), "train_sqn": rng.normal(-1, 1),
+                         "val_trades": int(rng.integers(50, 500)), "val_expectancy_R": rng.normal(-0.2, 0.2)})
+    trials = pd.DataFrame(rows)
+    finalists = trials.head(3).assign(val_net_trades=[150, 90, 300], val_net_expectancy_R=[0.05, -0.1, -0.3],
+                                      val_net_profit_factor=[1.1, 0.8, 0.6], val_net_ci_low=[-0.05, -0.3, -0.4],
+                                      val_years_positive=[2, 1, 0], val_half_expectancy_R=[0.1, 0.0, -0.2],
+                                      val_gross_expectancy_R=[0.15, 0.05, -0.1], verdict=["watch", "inconclusive", "rejected"])
+    trials.to_csv(tmp_path / "trials.csv", index=False)
+    finalists.to_csv(tmp_path / "finalists.csv", index=False)
+    prov = {"git": {"commit": "abc1234567", "dirty": False}, "dataset_sha256": "f" * 64, "status": "provisional"}
+    (tmp_path / "report.md").write_text(ms.report(pd.read_csv(tmp_path / "trials.csv"),
+                                                  pd.read_csv(tmp_path / "finalists.csv"), prov), encoding="utf-8")
+    return tmp_path
+
+
+def test_the_admin_result_builds_from_the_files_and_is_json(tmp_path):
+    import json
+
+    run = jobs._s1_result(_fake_results(tmp_path), {}, "results/S1")
+    json.dumps(run, allow_nan=False)
+    assert run["kind"] == "search_s1" and run["summary"]["verdict"] == "watch"
+    params = {r["param"] for r in run["detail"]["optimization"]["importance"]}
+    assert {"chart_tf", "entry_mode", "level_type", "d1"} <= params      # text choices are ranked too
+    assert "## Finalists on validation" in run["report_md"]

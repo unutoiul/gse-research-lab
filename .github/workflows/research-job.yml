@@ -65,6 +65,16 @@ jobs:
             echo "job_id is not a UUID" && exit 1
           fi
 
+      # The job's files (a search's full trials, its report): kept for 30 days, also when a later step fails.
+      - name: Keep the job's files
+        if: always() && env.JOB_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-job-${{ env.JOB_ID }}
+          path: out/jobs/${{ env.JOB_ID }}/
+          if-no-files-found: ignore
+          retention-days: 30
+
       # A run that dies on its own (time limit, crash, setup error) cannot mark its job,
       # which would otherwise show as running in the admin forever.
       - name: Report a run that stopped early

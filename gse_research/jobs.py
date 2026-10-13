@@ -223,7 +223,7 @@ def optimization(trials: pd.DataFrame, params: list[str], train: str, val: str, 
     for p in params:
         if t[p].dtype == bool:
             t[p] = t[p].astype(int)
-        elif t[p].dtype == object:
+        elif not pd.api.types.is_numeric_dtype(t[p]):  # text (object, or pandas 3's str)
             # A text choice has no order: rank its values by their mean training result, so the
             # validation correlation shows whether training's ordering carries over.
             order = t.groupby(p)[train].mean().sort_values().index
@@ -233,9 +233,9 @@ def optimization(trials: pd.DataFrame, params: list[str], train: str, val: str, 
     importance = []
     for p in params:
         if t[p].nunique() > 1:
-            x = codes.get(p, t[p])
-            importance.append({"param": p, "spearman_train": x.corr(t[train], method="spearman"),
-                               "spearman_val": x.corr(t[val], method="spearman")})
+            x = codes.get(p, t[p]).rank()  # Spearman = Pearson on ranks (no scipy needed)
+            importance.append({"param": p, "spearman_train": x.corr(t[train].rank()),
+                               "spearman_val": x.corr(t[val].rank())})
     importance.sort(key=lambda r: -abs(r["spearman_val"] if r["spearman_val"] == r["spearman_val"] else 0))
     marginals = {}
     for p in params:
