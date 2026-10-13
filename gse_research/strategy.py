@@ -51,6 +51,9 @@ class StrategyParams:
     # "rejection" if the candle closed back with the indicator's rejection wick (>= half its range),
     # "close_back" if it simply closed back on the level's side (the indicator's candle-close touch).
     entry_mode: str = "limit"
+    # Which untouched levels can be entered: "fresh" A/V levels (the Pine), "flip" levels a body closed
+    # through and nothing has touched since (flip candidates: Malaysian SnR's "fresh again"), or "both".
+    level_type: str = "fresh"
 
     def stop_distance(self, atr: float) -> float:
         """Fixed stop distance from the entry, or 0 for the Pine structural stop."""
@@ -89,12 +92,15 @@ def fresh_h4(h4: pd.DataFrame, swing_len: int, ties: str = "strict") -> np.ndarr
     return out
 
 
-def touch_pick(levels, h4_dir: int, bar_close: float):
+ENTRY_STATES = {"fresh": (ST_FRESH,), "flip": (ST_CAND,), "both": (ST_FRESH, ST_CAND)}
+
+
+def touch_pick(levels, h4_dir: int, bar_close: float, states: tuple = (ST_FRESH,)):
     """f_touch_pick (strategy-helpers.pine:26-34): nearest fresh, untouched, not-in-contact level on the
     trade side (support for a long, resistance for a short; in the Pine the trade side is the H4 side)."""
     best = None
     for lv in levels:
-        if lv.state == ST_FRESH and lv.touches == 0 and not lv.in_contact and lv.role == h4_dir and lv.role * (bar_close - lv.price) > 0:
+        if lv.state in states and lv.touches == 0 and not lv.in_contact and lv.role == h4_dir and lv.role * (bar_close - lv.price) > 0:
             if best is None or abs(bar_close - lv.price) < abs(bar_close - best.price):
                 best = lv
     return best
@@ -321,14 +327,15 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
     confirm = p.entry_mode in ("rejection", "close_back")
     cols["order"] = ["market" if confirm else "limit"] * n
     O, H, Lo = (m15[k].to_numpy(float) for k in ("open", "high", "low"))
-    track = {"fresh": set()}  # ids of fresh, untouched levels at the previous close (rejection entries)
+    states = ENTRY_STATES[p.level_type]
+    track = {"fresh": set()}  # ids of enterable, untouched levels at the previous close (confirmed entries)
     flip = {"with": 1, "against": -1}[p.h4_mode]
     d1_want = {"off": 0, "with": 1, "against": -1}[p.d1_mode]
     if d1_want and d1 is None:
         d1 = d1_inputs(m15, p)
 
     def hook(t, levels, eqh, eql, pdh, pdl, pwh, pwl, atr, c):
-        was_fresh, track["fresh"] = track["fresh"], {lv.id for lv in levels if lv.state == ST_FRESH and lv.touches == 0}
+        was_fresh, track["fresh"] = track["fresh"], {lv.id for lv in levels if lv.state in states and lv.touches == 0}
         h4 = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
         d = h4 * flip
         cols["dir"][t], cols["h4_dir"][t] = d, h4
@@ -354,11 +361,12 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
             extreme = Lo[t] if d == 1 else H[t]
             entry, wick = c, extreme if isna(lv.wick) else (min(extreme, lv.wick) if d == 1 else max(extreme, lv.wick))
         else:
-            lv = touch_pick(levels, d, c)
+            lv = touch_pick(levels, d, c, states)
             if lv is None:
                 cols["reason"][t] = "no_fresh_level"
                 return
-            entry, wick = lv.price, lv.wick
+            # A flip candidate has no wick yet: its invalidation is the level itself.
+            entry, wick = lv.price, lv.price if isna(lv.wick) else lv.wick
         raw: list = []
         unpack(raw, packet(levels, eqh, eql, pdh, pdl, pwh, pwl, p.tick), 0, decision[t], decision[t], d, entry)
         unpack(raw, h1_pk[int(h1_idx[t])], 1, h1_close[t], decision[t], d, entry)
@@ -370,10 +378,16 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
             cols[k][t] = plan[k]
         cols["reason"][t] = plan["reason"] or "signal"
 
-    structure.run(m15, p.core(p.swing_len), hook=hook)
+    eng, _ = structure.run(m15, p.core(p.swing_len), hook=hook)
     out = pd.DataFrame(cols, index=m15.index)
     out["signal"] = out["reason"] == "signal"
+    # Confluence readings at each close, from the same level engine (chart bias, sweeps, sessions).
+    for k in FEATURES:
+        out[k] = eng[k].to_numpy()
     return out
+
+
+FEATURES = ("trend_score", "bull_sweep_age", "bear_sweep_age", "in_asian", "in_london", "in_ny")
 
 
 # ── Orders and broker emulation (strategy.pine:31-78) ───────────────────
@@ -429,7 +443,13 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
                        "bars_held": t - pos["fill_bar"] + 1, "R": R,
                        "mfe_R": pos["best"] / pos["risk"], "mae_R": min(pos["worst"] / pos["risk"], max(1.0, -R))})
 
+    sig_on = S["signal"]
     for t in range(first, len(m15)):
+        # Nothing working and no new signal: the candle changes nothing (the end still stops the run).
+        if pos is None and pending is None and not close_at_next_open and not (in_test[t] and sig_on[t]):
+            if after_end[t]:
+                break
+            continue
         closed_this_bar = False
         # ── During candle t: orders submitted at earlier closes work now.
         if close_at_next_open and pos is not None:

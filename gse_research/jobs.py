@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import data, experiments, metrics, optimize, quality, signals, strategy, strategy_study, timeframes
+from . import data, experiments, metrics, msnr_search, optimize, quality, signals, strategy, strategy_study, timeframes
 
 PERIODS = {"train": ("2016-01-01", "2019-01-01"), "validate": ("2019-01-01", "2023-01-01")}
 WARMUP = "2015-10-01"
@@ -51,6 +51,7 @@ SCHEMA = {
     "search_o2": ({}, {}),
     "search_o3": ({}, {}),
     "study_t1": ({}, {}),
+    "search_s1": ({}, {}),
 }
 
 
@@ -218,16 +219,23 @@ def _headline(summary: dict) -> dict:
 def optimization(trials: pd.DataFrame, params: list[str], train: str, val: str, train_n: str, val_n: str,
                  default_mask: pd.Series, selected: dict | None, heatmaps: list[tuple], min_train: int) -> dict:
     t = trials.copy()
+    codes = {}
     for p in params:
         if t[p].dtype == bool:
             t[p] = t[p].astype(int)
+        elif t[p].dtype == object:
+            # A text choice has no order: rank its values by their mean training result, so the
+            # validation correlation shows whether training's ordering carries over.
+            order = t.groupby(p)[train].mean().sort_values().index
+            codes[p] = t[p].map({v: i for i, v in enumerate(order)})
     eligible = t[t[train_n] >= min_train]
     rho = eligible[[train, val]].corr(method="spearman").iloc[0, 1] if len(eligible) > 2 else np.nan
     importance = []
     for p in params:
         if t[p].nunique() > 1:
-            importance.append({"param": p, "spearman_train": t[[p, train]].corr(method="spearman").iloc[0, 1],
-                               "spearman_val": t[[p, val]].corr(method="spearman").iloc[0, 1]})
+            x = codes.get(p, t[p])
+            importance.append({"param": p, "spearman_train": x.corr(t[train], method="spearman"),
+                               "spearman_val": x.corr(t[val], method="spearman")})
     importance.sort(key=lambda r: -abs(r["spearman_val"] if r["spearman_val"] == r["spearman_val"] else 0))
     marginals = {}
     for p in params:
@@ -503,8 +511,70 @@ def _t1_result(out: Path, params: dict, source: str | None = None) -> dict:
             "provenance": _provenance({"source": source} if source else None)}
 
 
+def run_search_s1(params: dict, work: Path, progress) -> tuple[dict, None]:
+    out = msnr_search.run_search(out_dir=work, progress=progress)
+    return _s1_result(out, params), None
+
+
+S1_COLS = [*msnr_search.PARAMS, "train_trades", "train_expectancy_R", "train_sqn", "val_net_trades", "val_net_expectancy_R",
+           "val_net_profit_factor", "val_net_ci_low", "val_years_positive", "val_half_expectancy_R", "val_gross_expectancy_R",
+           "verdict"]
+
+
+def _s1_result(out: Path, params: dict, source: str | None = None) -> dict:
+    ms = msnr_search
+    trials = pd.read_csv(out / "trials.csv")
+    finalists = pd.read_csv(out / "finalists.csv")
+    eligible = trials[trials["train_trades"] >= ms.MIN_TRAIN_TRADES]
+    pine = np.logical_and.reduce([trials[k] == v for k, v in ms.PINE.items()])
+    best = finalists.iloc[0].to_dict() if len(finalists) else None
+    maps = [("entry_mode", "level_type", "val_expectancy_R", "Validation after costs: level type × entry", None),
+            ("h4_mode", "chart_tf", "val_expectancy_R", "Validation after costs: chart × 4H direction", None),
+            ("stop_atr", "swing_len", "val_expectancy_R", "Validation after costs: lookback × stop (0 = structural)", None)]
+    opt = optimization(trials, ms.PARAMS, "train_expectancy_R", "val_expectancy_R", "train_trades", "val_trades",
+                       pd.Series(pine), clean(best), maps, ms.MIN_TRAIN_TRADES)
+    counts = finalists["verdict"].value_counts().to_dict() if len(finalists) else {}
+    status = next((s for s in ("candidate", "watch", "rejected", "inconclusive") if counts.get(s)), "inconclusive")
+    line = ms.luck_line(len(eligible))
+    reasons = [f"{len(trials):,} combinations; {len(eligible):,} with ≥ {ms.MIN_TRAIN_TRADES} training trades",
+               f"finalists (top {ms.FINALISTS} by training SQN) on validation: "
+               + (", ".join(f"{v} {k}" for k, v in counts.items()) or "none"),
+               f"luck line: the best of {len(eligible):,} edgeless combinations would reach a training SQN near {line:.1f}; "
+               f"best found {eligible['train_sqn'].max():.2f}" if len(eligible) else "no eligible combination"]
+    rho = opt["overfit"]["spearman_train_val"]
+    if rho == rho and rho < 0.3:
+        reasons.append(f"training rank does not predict validation (Spearman {rho:+.2f}): tuning fits noise")
+    labels = {"candidate": "Candidate", "watch": "Watch", "rejected": "Rejected", "inconclusive": "Inconclusive"}
+    v = {"status": status, "label": labels[status], "reasons": reasons}
+    detail = {"verdict": v, "optimization": opt}
+    series = None
+    if best is not None and (out / "best_trades.csv").exists():
+        bt = pd.read_csv(out / "best_trades.csv", parse_dates=["signal_time", "fill_time", "entry_time", "exit_time"])
+        if len(bt):
+            bt["session"] = session_of(bt["fill_time"])
+            bt["direction"] = bt["side"].map({1: "long", -1: "short"})
+            bt["year"] = bt["entry_time"].dt.year
+        costs = {COST_LABELS[c]: best.get(f"val_{c}_expectancy_R") for c in ("gross", "half", "net")}
+        detail["diagnostics"] = diagnose(bt, costs, None, first_is_gross=True)
+        detail["diagnostics"]["notes"].insert(0, "Diagnostics below are for the first finalist, validation period, OANDA costs.")
+        detail["trades"] = trade_table(bt, STRATEGY_TRADE_COLS)
+        series = {"first finalist · validation · net": equity(bt)}
+    return {"kind": "search_s1", "title": f"S1 · Malaysian SnR with confluences · {len(trials):,} combinations", "params": params,
+            "summary": clean({"combinations": len(trials), "eligible": len(eligible),
+                              "positive_val": int((eligible["val_expectancy_R"] > 0).sum()),
+                              "positive_both": int(((eligible["train_expectancy_R"] > 0) & (eligible["val_expectancy_R"] > 0)).sum()),
+                              "candidates": counts.get("candidate", 0),
+                              "best_val_net_expectancy_R": finalists["val_net_expectancy_R"].max() if len(finalists) else None,
+                              "verdict": status}),
+            "equity": {"series": series} if series else None,
+            "tables": {"Finalists judged on validation": table(finalists[[c for c in S1_COLS if c in finalists]], index=False)},
+            "detail": clean(detail), "report_md": (out / "report.md").read_text(encoding="utf-8"),
+            "provenance": _provenance({"source": source} if source else None)}
+
+
 RUNNERS = {"data_update": run_data_update, "r001": run_r001, "strategy_backtest": run_strategy_backtest,
-           "search_o1": run_search_o1, "search_o2": run_search_o2, "search_o3": run_search_o3, "study_t1": run_study_t1}
+           "search_o1": run_search_o1, "search_o2": run_search_o2, "search_o3": run_search_o3, "study_t1": run_study_t1,
+           "search_s1": run_search_s1}
 
 
 def committed_results() -> list[dict]:
@@ -521,4 +591,6 @@ def committed_results() -> list[dict]:
         out.append(_o3_result(root / "O3", {}, "results/O3"))
     if (root / "T1" / "summary.csv").exists():
         out.append(_t1_result(root / "T1", {}, "results/T1"))
+    if (root / "S1" / "trials.csv").exists():
+        out.append(_s1_result(root / "S1", {}, "results/S1"))
     return out
