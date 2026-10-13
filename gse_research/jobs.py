@@ -594,6 +594,40 @@ RUNNERS = {"data_update": run_data_update, "r001": run_r001, "strategy_backtest"
            "search_s1": run_search_s1, "search_s2": run_search_s2}
 
 
+def _x1_result(out: Path, source: str | None = None) -> dict:
+    """A one-shot locked test (results/X1) as an admin run."""
+    spec = json.loads((out / "rule.json").read_text(encoding="utf-8"))
+    s = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    trades = pd.read_csv(out / "trades_net.csv", parse_dates=["signal_time", "fill_time", "entry_time", "exit_time"])
+    if len(trades):
+        trades["session"] = session_of(trades["fill_time"])
+        trades["direction"] = trades["side"].map({1: "long", -1: "short"})
+        trades["year"] = trades["entry_time"].dt.year
+    v = s["verdict"]
+    status = {"pass": "candidate", "weak": "watch", "fail": "rejected", "inconclusive": "inconclusive"}[v["status"]]
+    label = {"pass": "Pass", "weak": "Weak", "fail": "Fail", "inconclusive": "Inconclusive"}[v["status"]]
+    r = s["results"]
+    costs = {COST_LABELS[c]: r[c].get("expectancy_R") for c in ("gross", "half", "net")}
+    rec = spec["recorded"]
+    periods = pd.DataFrame([{"period": "train 2016-2018", "trades": rec["train"]["trades"], "expectancy_R": rec["train"]["expectancy_R"]},
+                            {"period": "validation 2019-2022", "trades": rec["validation"]["trades"],
+                             "expectancy_R": rec["validation"]["expectancy_R"]},
+                            {"period": "test 2023-2026", "trades": r["net"].get("trades"), "expectancy_R": r["net"].get("expectancy_R")}])
+    verdict = {"status": status, "label": label,
+               "reasons": [f"{'passed' if ok else 'failed'}: {name}" for name, ok in v["checks"].items()]}
+    return {"kind": "locked_test", "title": f"{spec['name']} · Locked test 2023–2026 · {label}", "params": spec["rule"],
+            "summary": clean({**_headline(r["net"]), "ci90_low": s["ci90"]["low"], "ci90_high": s["ci90"]["high"],
+                              "verdict": status}),
+            "equity": {"series": {"test 2023-2026 · net": equity(trades)}},
+            "tables": {"Train, validation and the locked test": table(periods, index=False),
+                       "Test by year (net R per trade)": table(pd.DataFrame([s["years_R"]]), index=False)},
+            "detail": clean({"verdict": verdict, "ci": s["ci90"],
+                             "diagnostics": diagnose(trades, costs, None, first_is_gross=True),
+                             "trades": trade_table(trades, STRATEGY_TRADE_COLS)}),
+            "report_md": (out / "report.md").read_text(encoding="utf-8"),
+            "provenance": _provenance({"source": source} if source else None)}
+
+
 def committed_results() -> list[dict]:
     """The results already in results/ as runs, for publishing to the admin."""
     root = data.ROOT / "results"
@@ -608,6 +642,8 @@ def committed_results() -> list[dict]:
         out.append(_o3_result(root / "O3", {}, "results/O3"))
     if (root / "T1" / "summary.csv").exists():
         out.append(_t1_result(root / "T1", {}, "results/T1"))
+    if (root / "X1" / "summary.json").exists():
+        out.append(_x1_result(root / "X1", "results/X1"))
     for study in ("S1", "S2"):
         if (root / study / "trials.csv").exists():
             out.append(_s1_result(root / study, {}, f"results/{study}", study))

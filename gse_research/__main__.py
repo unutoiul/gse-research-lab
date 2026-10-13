@@ -108,7 +108,7 @@ def main() -> None:
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "locked-test":
-        out = locked_test.run(Path(args.rule), args.allow_test)
+        out = locked_test.run(Path(args.rule).resolve(), args.allow_test)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "worker":
         worker.run_worker(args.once, args.poll)

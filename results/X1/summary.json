@@ -1,0 +1,142 @@
+{
+  "name": "X1",
+  "rule": {
+    "chart_tf": "15m",
+    "swing_len": 10,
+    "level_type": "both",
+    "entry_mode": "close_back",
+    "h4_mode": "against",
+    "stop_atr": 5.0,
+    "target_r": 1.0,
+    "d1": true,
+    "sweep": false,
+    "session": true,
+    "zone": false,
+    "mtf": false
+  },
+  "test_period": [
+    "2023-01-01",
+    "2026-10-01"
+  ],
+  "validation_reproduced": true,
+  "results": {
+    "net": {
+      "trades": 121,
+      "win_rate": 0.5619834710743802,
+      "avg_win_R": 0.9825318639805976,
+      "avg_loss_R": -1.0300363444448692,
+      "expectancy_R": 0.10099372310002132,
+      "total_R": 12.22024049510258,
+      "profit_factor": 1.2238470289158174,
+      "max_drawdown_R": 9.570962009946921,
+      "avg_mfe_R": 0.7657717238501992,
+      "avg_mae_R": 0.6458552661070714,
+      "median_planned_rr": 0.9826939717334898,
+      "avg_spread_R": NaN,
+      "avg_bars_held": 62.760330578512395,
+      "std_R": 1.0027627102758876,
+      "sqn": 1.107870229632479,
+      "max_consecutive_losses": 5,
+      "recovery_factor": 1.2768037823577518,
+      "trades_per_week": 0.618699780861943,
+      "trades_per_month": 2.6810323837350865,
+      "R_per_year": 3.249209306221577,
+      "exit_target": 68,
+      "exit_stop": 52,
+      "exit_stop_gap": 1,
+      "orders": {
+        "submitted": 121,
+        "cancelled": 0,
+        "filled": 121
+      }
+    },
+    "half": {
+      "trades": 121,
+      "win_rate": 0.5619834710743802,
+      "avg_win_R": 0.9912069943403584,
+      "avg_loss_R": -1.0157825403116765,
+      "expectancy_R": 0.11211240478202908,
+      "total_R": 13.565600978625518,
+      "profit_factor": 1.2519778843286957,
+      "max_drawdown_R": 8.786822074144494,
+      "avg_mfe_R": 0.7794760026066059,
+      "avg_mae_R": 0.6308193612404424,
+      "median_planned_rr": 0.9918842625264797,
+      "avg_spread_R": NaN,
+      "avg_bars_held": 63.18181818181818,
+      "std_R": 0.999936614203751,
+      "sqn": 1.2333146272319924,
+      "max_consecutive_losses": 5,
+      "recovery_factor": 1.5438574793203943,
+      "trades_per_week": 0.618699780861943,
+      "trades_per_month": 2.6810323837350865,
+      "R_per_year": 3.606923854068436,
+      "exit_target": 68,
+      "exit_stop": 52,
+      "exit_stop_gap": 1,
+      "orders": {
+        "submitted": 121,
+        "cancelled": 0,
+        "filled": 121
+      }
+    },
+    "gross": {
+      "trades": 121,
+      "win_rate": 0.5619834710743802,
+      "avg_win_R": 0.9998292073297574,
+      "avg_loss_R": -1.0015287361784588,
+      "expectancy_R": 0.12320134777657171,
+      "total_R": 14.907363080965178,
+      "profit_factor": 1.2808416687082718,
+      "max_drawdown_R": 8.01520603824298,
+      "avg_mfe_R": 0.7952922088475328,
+      "avg_mae_R": 0.6161715751777896,
+      "median_planned_rr": 0.99984591679508,
+      "avg_spread_R": NaN,
+      "avg_bars_held": 63.16528925619835,
+      "std_R": 0.9971170477855724,
+      "sqn": 1.3591331414421113,
+      "max_consecutive_losses": 5,
+      "recovery_factor": 1.8598851994368737,
+      "trades_per_week": 0.618699780861943,
+      "trades_per_month": 2.6810323837350865,
+      "R_per_year": 3.963681637305569,
+      "exit_target": 68,
+      "exit_stop": 52,
+      "exit_stop_gap": 1,
+      "orders": {
+        "submitted": 121,
+        "cancelled": 0,
+        "filled": 121
+      }
+    }
+  },
+  "ci90": {
+    "low": -0.04561411688830642,
+    "high": 0.26054456436915513
+  },
+  "years_R": {
+    "2023": -0.18183965521561815,
+    "2024": 0.2565716275121898,
+    "2025": 0.23181303536817802,
+    "2026": 0.23589662017253596
+  },
+  "verdict": {
+    "status": "weak",
+    "checks": {
+      "trades >= 100": true,
+      "net expectancy > 0": true,
+      "bootstrap lower bound > 0": false,
+      "profit factor >= 1.2": true,
+      "positive in >= 3 of 4 years": true
+    },
+    "years_positive": 3
+  },
+  "provenance": {
+    "git": {
+      "commit": "45cd076fc8f89d80623d057a0537fb730c868d1e",
+      "dirty": false
+    },
+    "dataset_sha256": "a637520850ecc80034524342317282a80b55683d7816e408102c275ef1eb9897"
+  }
+}
