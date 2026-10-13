@@ -30,9 +30,10 @@ def _sha(path: Path) -> str:
 def _git() -> dict:
     def run(*args: str) -> str:
         return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    # Code and config changes make a run dirty; the results being written do not.
+    # Code and config changes make a run dirty; the results being written do not, and neither does
+    # data/manifest.json, which a data update rewrites (every GitHub run updates the candles first).
     return {"commit": run("rev-parse", "HEAD"),
-            "dirty": bool(run("status", "--porcelain", "--untracked-files=no", "--", ".", ":!results"))}
+            "dirty": bool(run("status", "--porcelain", "--untracked-files=no", "--", ".", ":!results", ":!data/manifest.json"))}
 
 
 def _params(cls, overrides: dict):
