@@ -15,6 +15,8 @@
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
+    python -m gse_research locked-test results/<name>/rule.json --allow-test
+        one-shot test of a frozen rule on the locked test period (owner approval)
     python -m gse_research worker [--once] [--poll 60]
         run jobs queued from the website admin (Research tab)
     python -m gse_research run-job <job id>
@@ -30,11 +32,12 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import json
 
 import pandas as pd
 
-from . import data, experiments, msnr_search, optimize, quality, strategy_study, timeframes, worker
+from . import data, experiments, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, worker
 
 
 def main() -> None:
@@ -59,6 +62,9 @@ def main() -> None:
     ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
     ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
+    lt = sub.add_parser("locked-test", help="one-shot test of a frozen rule on the locked test period")
+    lt.add_argument("rule")
+    lt.add_argument("--allow-test", action="store_true", help="open the locked test period (owner approval)")
     wk = sub.add_parser("worker", help="run jobs queued from the website admin")
     wk.add_argument("--once", action="store_true", help="exit when the queue is empty")
     wk.add_argument("--poll", type=float, default=60.0, help="seconds between queue checks (Neon sleeps only if > its 5-minute window)")
@@ -100,6 +106,9 @@ def main() -> None:
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "msnr-search":
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
+        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "locked-test":
+        out = locked_test.run(Path(args.rule), args.allow_test)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "worker":
         worker.run_worker(args.once, args.poll)

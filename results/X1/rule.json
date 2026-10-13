@@ -1,0 +1,33 @@
+{
+  "name": "X1",
+  "frozen": "2026-10-13",
+  "approved_by": "owner (chat, 2026-10-13: \"yes\" to opening 2023+ once for this rule)",
+  "source": "results/S2/trials.csv: best validation expectancy among 5,064 combinations with >= 100 training trades (rank 1 of 5,064). Chosen after seeing validation, so validation is not evidence for it.",
+  "rule": {
+    "chart_tf": "15m",
+    "swing_len": 10,
+    "level_type": "both",
+    "entry_mode": "close_back",
+    "h4_mode": "against",
+    "stop_atr": 5.0,
+    "target_r": 1.0,
+    "d1": true,
+    "sweep": false,
+    "session": true,
+    "zone": false,
+    "mtf": false
+  },
+  "recorded": {
+    "train": {"period": ["2016-01-01", "2019-01-01"], "trades": 118, "expectancy_R": -0.0964633243204827},
+    "validation": {"period": ["2019-01-01", "2023-01-01"], "trades": 127, "expectancy_R": 0.1554990209536527}
+  },
+  "test_period": ["2023-01-01", "2026-10-01"],
+  "test_years": [2023, 2024, 2025, 2026],
+  "costs": "headline: OANDA bid/ask + 0.10 slippage on stops (net); half spread + 0.05 and mid prices reported alongside",
+  "criteria": {
+    "inconclusive": "fewer than 100 closed trades in the test period",
+    "fail": "net expectancy <= 0",
+    "pass": "net expectancy > 0 AND 90% weekly-block bootstrap lower bound > 0 AND profit factor >= 1.2 AND positive in at least 3 of the 4 test years",
+    "weak": "net expectancy > 0 but any pass condition missing"
+  }
+}
