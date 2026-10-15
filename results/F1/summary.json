@@ -1,0 +1,34 @@
+{
+  "data_end": "2026-10-15 11:45:00+00:00",
+  "forward_start": "2026-10-13",
+  "verdict": "running",
+  "text": "2 of 400 resolved primary touches: a running tally, not evidence yet.",
+  "primary": {
+    "chart_tf": "15m",
+    "swing_len": 10,
+    "type": "flipped",
+    "period": "forward",
+    "touches": 2,
+    "random": 6,
+    "win_real": 0.0,
+    "win_random": 0.6,
+    "win_diff": -0.6,
+    "win_diff_low": -0.6,
+    "win_diff_high": -0.6,
+    "unresolved": 0.0,
+    "ret16_real": -3.337871113497926,
+    "ret16_random": -2.110562855098606,
+    "ret16_diff": -1.22730825839932,
+    "ret16_diff_low": -1.22730825839932,
+    "ret16_diff_high": -1.22730825839932,
+    "mfe_real": 1.9114996779171676,
+    "mae_real": 5.963370474800652,
+    "cost_atr": 0.12031014072171806,
+    "resolved": 2,
+    "pending": 0
+  },
+  "git": {
+    "commit": "aac081a683f48e3cb574887fcf2ccca1ab9f02c1",
+    "dirty": false
+  }
+}
