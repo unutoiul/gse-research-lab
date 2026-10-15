@@ -16,6 +16,8 @@
         study O4: GSE Strategy v4.1, 15m/H1 lookback 8/10/12 x H4 lookback 6/8/10, written to results/O4/
     python -m gse_research event-study [--workers N]
         study E1: first touches of fresh and flipped levels against random levels, before costs, results/E1/
+    python -m gse_research forward-test [--out DIR]
+        forward test F1: flipped-level touches since 2026-10-13 against random levels, results/F1/
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
@@ -45,7 +47,7 @@ import json
 
 import pandas as pd
 
-from . import data, event_study, experiments, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
+from . import data, event_study, experiments, forward, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
 
 
 def main() -> None:
@@ -71,6 +73,8 @@ def main() -> None:
     v4.add_argument("--workers", type=int, default=None)
     es = sub.add_parser("event-study", help="study E1: do GSE levels have an edge before costs?")
     es.add_argument("--workers", type=int, default=None)
+    fw = sub.add_parser("forward-test", help="forward test F1: flipped-level touches on unseen candles")
+    fw.add_argument("--out", type=Path, default=None)
     ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
     ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
@@ -128,6 +132,10 @@ def main() -> None:
     elif args.command == "event-study":
         out = event_study.run_study(args.workers)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "forward-test":
+        out = forward.run(args.out)
+        print(json.loads((out / "summary.json").read_text(encoding="utf-8"))["text"])
+        print(f"Report: {out / 'report.md'}")
     elif args.command == "msnr-search":
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")

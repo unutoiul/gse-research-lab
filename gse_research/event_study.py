@@ -101,14 +101,15 @@ def outcomes(chart: pd.DataFrame, ev: pd.DataFrame, atr: np.ndarray) -> pd.DataF
     return ev.assign(**res)
 
 
-def control_events(chart: pd.DataFrame, ev: pd.DataFrame, atr: np.ndarray, rng: np.random.Generator) -> pd.DataFrame:
+def control_events(chart: pd.DataFrame, ev: pd.DataFrame, atr: np.ndarray, rng: np.random.Generator,
+                   periods: dict | None = None) -> pd.DataFrame:
     """CONTROLS random levels per real touch: same side and distance from price at formation, a random
     start candle in the same period, then its first touch from that side (no gap through it)."""
     O, H, L, C = (chart[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     times = chart["time"]
     n = len(C)
     bounds = {p: (int(times.searchsorted(pd.Timestamp(a, tz="UTC"))), int(times.searchsorted(pd.Timestamp(b, tz="UTC"))))
-              for p, (a, b) in PERIODS.items()}
+              for p, (a, b) in (periods or PERIODS).items()}
     rows = []
     for e in ev.itertuples(index=False):
         dist = e.side * (C[e.born_bar] - e.price) / atr[e.born_bar]
@@ -116,6 +117,8 @@ def control_events(chart: pd.DataFrame, ev: pd.DataFrame, atr: np.ndarray, rng: 
             continue
         lo, hi = bounds[e.period]
         made = 0
+        if hi <= lo:
+            continue
         for _ in range(CONTROLS * 10):
             if made == CONTROLS:
                 break
@@ -136,24 +139,29 @@ def control_events(chart: pd.DataFrame, ev: pd.DataFrame, atr: np.ndarray, rng: 
     return pd.DataFrame(rows)
 
 
-def evaluate_cell(key: tuple) -> pd.DataFrame:
-    """Real and random touches with outcomes for one chart and lookback (both level types)."""
+def evaluate_cell(key: tuple, periods: dict | None = None, chart: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Real and random touches with outcomes for one chart and lookback (both level types).
+    `periods` and `chart` default to E1's periods and the loaded history (the forward test passes its own)."""
     tf, swing = key
-    chart = _chart(tf)
+    periods = periods or PERIODS
+    chart = _chart(tf) if chart is None else chart
     ev, atr = touch_events(chart, swing)
     times = chart["time"]
+    if ev.empty:
+        return pd.DataFrame()
     ev = ev.assign(time=times.iloc[ev["bar"]].reset_index(drop=True))
     ev["period"] = None
-    for p, (a, b) in PERIODS.items():
+    for p, (a, b) in periods.items():
         ev.loc[(ev["time"] >= pd.Timestamp(a, tz="UTC")) & (ev["time"] < pd.Timestamp(b, tz="UTC")), "period"] = p
     ev = ev[ev["period"].notna()].reset_index(drop=True)
     spread = (chart["ask_close"] - chart["bid_close"]).to_numpy(float)
     ev["cost_atr"] = (spread[ev["bar"] - 1] + 2 * SLIPPAGE) / atr[ev["bar"] - 1]   # one spread, slippage both ways
     real = outcomes(chart, ev, atr).assign(group="real")
     rng = np.random.default_rng([SEED, CHARTS.index(tf), swing])
-    ctrl = control_events(chart, ev, atr, rng)
-    ctrl = ctrl.assign(time=times.iloc[ctrl["bar"]].reset_index(drop=True))
-    ctrl = outcomes(chart, ctrl, atr).assign(group="random")
+    ctrl = control_events(chart, ev, atr, rng, periods)
+    if len(ctrl):
+        ctrl = ctrl.assign(time=times.iloc[ctrl["bar"]].reset_index(drop=True))
+        ctrl = outcomes(chart, ctrl, atr).assign(group="random")
     return pd.concat([real, ctrl], ignore_index=True).assign(chart_tf=tf, swing_len=swing)
 
 
@@ -163,8 +171,9 @@ def _diff(real: pd.DataFrame, ctrl: pd.DataFrame, col: str, level: float) -> dic
     return metrics.bootstrap_mean_diff(a, b, level=level)
 
 
-def summarize(events: pd.DataFrame) -> pd.DataFrame:
-    level = 1 - 0.10 / (len(CHARTS) * len(LOOKBACKS) * len(TYPES))   # 90% two-sided, widened for 18 cells
+def summarize(events: pd.DataFrame, level: float | None = None) -> pd.DataFrame:
+    # 90% two-sided, widened for E1's 18 cells unless a level is given.
+    level = level or 1 - 0.10 / (len(CHARTS) * len(LOOKBACKS) * len(TYPES))
     rows = []
     for (tf, swing, kind, period), g in events.groupby(["chart_tf", "swing_len", "type", "period"], sort=False):
         real, ctrl = g[g["group"] == "real"], g[g["group"] == "random"]

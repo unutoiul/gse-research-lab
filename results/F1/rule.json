@@ -1,0 +1,23 @@
+{
+  "name": "F1",
+  "frozen": "2026-10-15",
+  "requested_by": "owner (chat, 2026-10-15: \"setup this than and test it\" for the forward record of flipped-level touches)",
+  "source": "results/E1/report.md: 15m first touches of confirmed flipped levels beat random levels by +0.026/+0.025/+0.065 (train) and +0.025/+0.019/+0.028 (validation) at lookbacks 3/5/10, all inside the intervals. No candle after the forward start was looked at before this file was committed.",
+  "forward_start": "2026-10-13",
+  "primary": {
+    "chart_tf": "15m",
+    "swing_len": 10,
+    "level_type": "flipped (first touch after the confirming retest)",
+    "levels": "GSE v4.1 (structure.V41_FLIPS)",
+    "data": "OANDA XAU_USD M15, mid prices"
+  },
+  "secondary": "15m lookbacks 3 and 5, 1H and 4H at lookback 10, fresh levels: reported, never decided on",
+  "measure": "win = price reaches 1 ATR away from the level before 1 ATR through it within 32 candles (touch candle's adverse extreme counts, its favourable one does not); against 3 random levels per touch at the same side and distance from price (event_study.control_events)",
+  "criteria": {
+    "running": "fewer than 400 resolved primary touches",
+    "no_edge": "90% weekly-block bootstrap interval of win(real) - win(random) reaches zero",
+    "edge_not_tradeable": "interval above zero, but win(real) < 0.5 + cost_atr / 2 (a 1:1 trade with a 1 ATR stop does not cover one spread plus slippage)",
+    "edge": "interval above zero and win(real) >= 0.5 + cost_atr / 2"
+  },
+  "note": "At E1's rate (about 135 primary touches a year) the verdict needs about three years. Interim reports are tallies, not evidence; the criteria are applied once, when 400 touches are resolved."
+}
