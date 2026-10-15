@@ -272,7 +272,9 @@ def _v41_report(df: pd.DataFrame, prov: dict) -> str:
     for period in ("train", "val"):
         cols += [f"{period}_net_trades", f"{period}_net_win_rate", f"{period}_net_expectancy_R", f"{period}_net_profit_factor",
                  f"{period}_net_max_drawdown_R", f"{period}_gross_expectancy_R"]
-    years = sorted(c for c in df.columns if c.startswith(("train_net_2", "val_net_2")) and c.endswith("_R"))
+    # By exit year; a trade still open at a period's end exits in the next year and is left out here.
+    in_period = lambda c: int(c.split("_")[2]) < int((TRAIN if c.startswith("train") else VALIDATE)[1][:4])
+    years = sorted(c for c in df.columns if c.startswith(("train_net_2", "val_net_2")) and c.endswith("_R") and in_period(c))
     by_year = df[cols[:2] + years].set_index("swing_len").round(3)
     best = df.sort_values("train_net_expectancy_R", ascending=False).iloc[0]
     o2 = data.ROOT / "results" / "O2" / "trials.csv"
