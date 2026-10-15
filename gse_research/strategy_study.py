@@ -40,18 +40,18 @@ def _init() -> None:
 
 
 @lru_cache(maxsize=2)
-def _h1(swing_len: int):
-    return st.h1_inputs(_M15, st.StrategyParams(swing_len=swing_len))
+def _h1(swing_len: int, flip_rules: str = "4.0"):
+    return st.h1_inputs(_M15, st.StrategyParams(swing_len=swing_len, flip_rules=flip_rules))
 
 
 @lru_cache(maxsize=len(GRID))
-def _h4(h4_len: int):
-    return st.h4_inputs(_M15, st.StrategyParams(h4_swing_len=h4_len))
+def _h4(h4_len: int, flip_rules: str = "4.0"):
+    return st.h4_inputs(_M15, st.StrategyParams(h4_swing_len=h4_len, flip_rules=flip_rules))
 
 
 def evaluate(cfg: dict) -> dict:
     p = st.StrategyParams(**cfg)
-    sig = st.signals(_M15, p, _h1(p.swing_len), _h4(p.h4_swing_len))
+    sig = st.signals(_M15, p, _h1(p.swing_len, p.flip_rules), _h4(p.h4_swing_len, p.flip_rules))
     row = dict(cfg)
     for period, (a, b) in (("train", TRAIN), ("val", VALIDATE)):
         weeks = (pd.Timestamp(b) - pd.Timestamp(a)).days / 7
@@ -62,6 +62,9 @@ def evaluate(cfg: dict) -> dict:
                 row[f"{period}_{cost}_{k}"] = s.get(k, np.nan)
             if cost == "net":
                 row[f"{period}_orders"] = counts["submitted"]
+                closed = metrics.closed(trades)
+                for y, r in closed.groupby(closed["exit_time"].dt.year)["R"].mean().items() if len(closed) else ():
+                    row[f"{period}_net_{y}_R"] = r
     return row
 
 
@@ -240,5 +243,67 @@ def _targets_report(df: pd.DataFrame, prov: dict) -> str:
               "## Limitations", "",
               f"- {len(df)} settings were tried; the best training result is optimistic by construction.",
               "- Lookbacks fixed at 10 / 10 (O2 found them nearly irrelevant).",
+              "- Provisional until the parity gate (pivot tie rule, OANDA versus BlackBull).", ""]
+    return "\n".join(lines)
+
+
+# ── Study O4: GSE Strategy v4.1 as written, 15m/H1 lookback x H4 lookback (a focused grid) ──
+# v4.1 changes only the level engine (role-reversal rules); entries, H4 direction, stops and the
+# website targets are v4.0's. Nine settings around the defaults, chosen before any result.
+O4_CHART, O4_H4 = [8, 10, 12], [6, 8, 10]
+
+
+def run_v41_study(workers: int | None = None, out_dir: Path | None = None, progress=None) -> Path:
+    configs = [{"swing_len": a, "h4_swing_len": b, "flip_rules": "4.1"} for a in O4_CHART for b in O4_H4]
+    df = _evaluate_all(configs, workers, progress)
+    out_dir = out_dir or data.ROOT / "results" / "O4"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_dir / "trials.csv", index=False)
+    manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]
+    prov = {"git": experiments._git(), "dataset_sha256": manifest["sha256"], "chart": O4_CHART, "h4": O4_H4,
+            "flip_rules": "4.1", "costs": {k: vars(v) for k, v in COSTS.items()}, "status": experiments.PROVISIONAL}
+    (out_dir / "report.md").write_text(_v41_report(df, prov), encoding="utf-8")
+    return out_dir
+
+
+def _v41_report(df: pd.DataFrame, prov: dict) -> str:
+    md, fmt = experiments._md, experiments._fmt
+    cols = ["swing_len", "h4_swing_len"]
+    for period in ("train", "val"):
+        cols += [f"{period}_net_trades", f"{period}_net_win_rate", f"{period}_net_expectancy_R", f"{period}_net_profit_factor",
+                 f"{period}_net_max_drawdown_R", f"{period}_gross_expectancy_R"]
+    years = sorted(c for c in df.columns if c.startswith(("train_net_2", "val_net_2")) and c.endswith("_R"))
+    by_year = df[cols[:2] + years].set_index("swing_len").round(3)
+    best = df.sort_values("train_net_expectancy_R", ascending=False).iloc[0]
+    o2 = data.ROOT / "results" / "O2" / "trials.csv"
+    same = pd.DataFrame()
+    if o2.exists():
+        v40 = pd.read_csv(o2)
+        same = df[cols[:2] + ["train_net_expectancy_R", "val_net_expectancy_R", "val_gross_expectancy_R"]].merge(
+            v40[cols[:2] + ["train_net_expectancy_R", "val_net_expectancy_R", "val_gross_expectancy_R"]],
+            on=cols[:2], suffixes=("_v41", "_v40")).set_index("swing_len").round(3)
+    lines = [
+        "# O4 — GSE Strategy v4.1 lookbacks (15m entries with H1 targets × H4 direction)", "",
+        f"> {prov['status']}", "",
+        "The strategy as written (fresh-touch limit with the 4H direction, website stop and TP2), with v4.1's level engine. "
+        f"15m/H1 swing lookback {O4_CHART} × H4 swing lookback {O4_H4}: nine settings fixed before any result. "
+        "Train 2016–2018, validation 2019–2022 (2023+ was spent on X1). Costs: **net** = OANDA bid/ask + 0.10 slippage on "
+        "stops; **gross** = mid prices, no slippage. Conservative intrabar order.", "",
+        f"Git `{prov['git']['commit'][:10]}`{' (dirty)' if prov['git']['dirty'] else ''} · dataset `{prov['dataset_sha256'][:12]}…`", "",
+        "## All nine settings", "", md(df[cols].set_index("swing_len").round(3)), "",
+        "## Net R per trade by year (train 2016–2018, validation 2019–2022)", "", md(by_year), "",
+        "## Validation net expectancy (R): rows 15m/H1 lookback, columns H4 lookback", "",
+        md(_pivot(df, "val_net_expectancy_R")), "",
+        "## Validation gross expectancy (R), before any cost", "", md(_pivot(df, "val_gross_expectancy_R")), "",
+    ]
+    if len(same):
+        lines += ["## Against v4.0's levels (study O2, same settings)", "", md(same), ""]
+    pos = int((df["val_net_expectancy_R"] > 0).sum())
+    verdict = (f"Best on train: {int(best['swing_len'])} / {int(best['h4_swing_len'])}, train net {fmt(best['train_net_expectancy_R'])} R, "
+               f"validation net {fmt(best['val_net_expectancy_R'])} R on {int(best['val_net_trades'])} trades. "
+               f"{pos} of 9 settings are positive on validation after costs.")
+    lines += ["## Conclusion", "", verdict, "",
+              "## Limitations", "",
+              "- Nine settings; the best training result is optimistic by construction.",
               "- Provisional until the parity gate (pivot tie rule, OANDA versus BlackBull).", ""]
     return "\n".join(lines)
