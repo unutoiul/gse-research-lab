@@ -21,6 +21,9 @@ Filters on the signal candles:
 Every combination is scored at OANDA costs on train (2016-2018) and validation (2019-2022). Train alone
 picks the finalists (highest SQN); validation judges them with the interval widened for the number of
 finalists, as in S1/S2. The test period (2023+) was spent on X1 and is not used.
+
+On GitHub Actions (.github/workflows/s3-search.yml) the designs are split over parallel runners
+(`--shard i --of n` writes trials_part_<i>.csv) and one runner merges the parts and judges (`--merge`).
 """
 
 from __future__ import annotations
@@ -57,7 +60,6 @@ IND_LENS, IND_AGES = (2, 3, 5), (5, 10, 20)
 INDUCEMENT = (["off"] + [f"{s}_{k}" for s in ("present", "cleared", "none") for k in IND_LENS]
               + [f"swept_{k}_{a}" for k in IND_LENS for a in IND_AGES])
 PARAMS = [*DESIGN, "stop_atr", "exit", "inducement", "session"]
-GROUP = ("chart_tf", "swing_len", "entry_mode")
 REFERENCE = {"chart_tf": "15m", "swing_len": 10, "level_type": "fresh", "entry_mode": "limit", "h4_mode": "off",
              "stop_atr": 1.0, "exit": "1.5R", "inducement": "off", "session": False}
 STUDY = "S3"
@@ -112,53 +114,69 @@ def exit_signals(sig: pd.DataFrame, stop_atr: float, exit_name: str) -> tuple[pd
     return ms.with_fixed_exits(sig, stop_atr, target_r), manage
 
 
-def evaluate_group(tf: str, swing: int, entry_mode: str) -> list[dict]:
-    """Every design with this chart, lookback and entry, under every exit, inducement and session filter."""
-    chart = _chart(tf)
-    inner = [k for k in DESIGN if k not in GROUP]
+def designs() -> list[dict]:
+    """Every trade design, 15m first (the slow ones)."""
+    return [dict(zip(DESIGN, v)) for v in itertools.product(*DESIGN.values())]
+
+
+def evaluate_design(design: dict) -> list[dict]:
+    """One trade design under every stop, exit, inducement and session filter."""
+    chart = _chart(design["chart_tf"])
+    sig0 = design_signals(design)
+    base = sig0["signal"].to_numpy(bool)
+    sess = session_mask(sig0)
+    filters = [(ind, s, base & inducement_mask(sig0, ind) & (sess if s else True))
+               for ind in INDUCEMENT for s in (False, True)]
     rows = []
-    for values in itertools.product(*(DESIGN[k] for k in inner)):
-        design = {"chart_tf": tf, "swing_len": swing, "entry_mode": entry_mode, **dict(zip(inner, values))}
-        sig0 = design_signals(design)
-        base = sig0["signal"].to_numpy(bool)
-        sess = session_mask(sig0)
-        filters = [(ind, s, base & inducement_mask(sig0, ind) & (sess if s else True))
-                   for ind in INDUCEMENT for s in (False, True)]
-        for stop_atr, exit_name in itertools.product(STOPS, EXITS):
-            sig, manage = exit_signals(sig0, stop_atr, exit_name)
-            for ind, s, keep in filters:
-                row = {**design, "stop_atr": stop_atr, "exit": exit_name, "inducement": ind, "session": s}
-                filtered = sig.assign(signal=keep)
-                for period, (a, b) in PERIODS.items():
-                    trades, _ = st.simulate(chart, filtered, a, b, COSTS["net"], manage)
-                    row.update(ms._score(trades, (pd.Timestamp(b) - pd.Timestamp(a)).days / 7, period, period))
-                rows.append(row)
+    for stop_atr, exit_name in itertools.product(STOPS, EXITS):
+        sig, manage = exit_signals(sig0, stop_atr, exit_name)
+        for ind, s, keep in filters:
+            row = {**design, "stop_atr": stop_atr, "exit": exit_name, "inducement": ind, "session": s}
+            filtered = sig.assign(signal=keep)
+            for period, (a, b) in PERIODS.items():
+                trades, _ = st.simulate(chart, filtered, a, b, COSTS["net"], manage)
+                row.update(ms._score(trades, (pd.Timestamp(b) - pd.Timestamp(a)).days / 7, period, period))
+            rows.append(row)
     return rows
 
 
-def _run_group(key: tuple) -> list[dict]:
-    return evaluate_group(*key)
-
-
-def run_search(workers: int | None = None, out_dir: Path | None = None, progress=None) -> Path:
-    # 15m groups first: they are the slow ones, so no worker is left with a long tail.
-    groups = [(tf, s, e) for tf in DESIGN["chart_tf"] for s in DESIGN["swing_len"] for e in DESIGN["entry_mode"]]
-    per_design = len(STOPS) * len(EXITS) * len(INDUCEMENT) * 2
-    total = math.prod(len(v) for v in DESIGN.values()) * per_design
-    workers = min(workers or resources.default_workers(), len(groups))
+def run_search(workers: int | None = None, out_dir: Path | None = None, progress=None,
+               shard: int | None = None, of: int = 1) -> Path:
+    """The whole search, or with `shard` only every `of`-th design from `shard` on (its rows go to
+    trials_part_<shard>.csv in out_dir, for `merge`)."""
+    todo = designs() if shard is None else designs()[shard::of]
+    total = len(todo) * len(STOPS) * len(EXITS) * len(INDUCEMENT) * 2
+    workers = min(workers or resources.default_workers(), len(todo))
     rows: list[dict] = []
     with ProcessPoolExecutor(max_workers=workers, initializer=_init) as pool:
-        futures = [pool.submit(_run_group, g) for g in groups]
+        futures = [pool.submit(evaluate_design, d) for d in todo]
         for i, fut in enumerate(as_completed(futures), 1):
             rows.extend(fut.result())
             if progress:
-                progress(0.85 * i / len(groups), f"{len(rows):,} of {total:,} combinations")
-    trials = pd.DataFrame(rows)
+                progress(0.85 * i / len(todo), f"{len(rows):,} of {total:,} combinations")
+    out_dir = out_dir or data.ROOT / "results" / STUDY
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if shard is not None:
+        pd.DataFrame(rows).to_csv(out_dir / f"trials_part_{shard}.csv", index=False)
+        return out_dir
+    return finish(pd.DataFrame(rows), out_dir, progress)
+
+
+def merge(parts_dir: Path, out_dir: Path | None = None, progress=None) -> Path:
+    """Join the shards' trials (every design exactly once) and judge them."""
+    parts = sorted(Path(parts_dir).glob("**/trials_part_*.csv"))
+    trials = pd.concat([pd.read_csv(p) for p in parts], ignore_index=True)
+    expected = len(designs()) * len(STOPS) * len(EXITS) * len(INDUCEMENT) * 2
+    if len(trials) != expected or trials.duplicated(PARAMS).any():
+        raise SystemExit(f"{len(parts)} parts hold {len(trials):,} rows; expected {expected:,} distinct combinations")
+    return finish(trials, out_dir or data.ROOT / "results" / STUDY, progress)
+
+
+def finish(trials: pd.DataFrame, out_dir: Path, progress=None) -> Path:
     if progress:
         progress(0.88, "finalists on validation")
     _init()
     finalists = judge(trials)
-    out_dir = out_dir or data.ROOT / "results" / STUDY
     out_dir.mkdir(parents=True, exist_ok=True)
     trials.to_csv(out_dir / "trials.csv", index=False)
     finalists.to_csv(out_dir / "finalists.csv", index=False)

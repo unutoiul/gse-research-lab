@@ -1,0 +1,109 @@
+# Study S3 (fresh and flipped level touches with inducement, stops, targets and trailing) on
+# GitHub Actions: the 108 trade designs are split over 18 parallel runners, then one runner
+# merges the parts and judges the finalists. Results: the "s3-results" artifact (results/S3/).
+# Runs without the research database, so the admin Research tab does not show it.
+name: s3-search
+run-name: "study S3 search"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PYTHONWARNINGS: ignore
+
+jobs:
+  data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
+      OANDA_ENV: ${{ secrets.OANDA_ENV }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Restore market data
+        uses: actions/cache/restore@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+          restore-keys: oanda-m15-
+      # One download for every shard: parallel OANDA downloads can be refused.
+      - name: Update market data (OANDA, only the missing candles)
+        run: python -m gse_research download
+      - name: Save market data
+        uses: actions/cache/save@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: market-data
+          path: |
+            data/XAU_USD_M15.parquet
+            data/manifest.json
+          retention-days: 3
+
+  shard:
+    needs: data
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    env:
+      GSE_WORKERS: "4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: market-data
+          path: data
+      - name: Run designs ${{ matrix.shard }}, ${{ matrix.shard }} + 18, ...
+        run: python -m gse_research touch-search --shard ${{ matrix.shard }} --of 18 --out out/s3-parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: s3-part-${{ matrix.shard }}
+          path: out/s3-parts/
+          retention-days: 7
+
+  merge:
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: market-data
+          path: data
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: s3-part-*
+          path: out/s3-parts
+          merge-multiple: true
+      - name: Merge the parts and judge the finalists
+        run: python -m gse_research touch-search --merge out/s3-parts --out results/S3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: s3-results
+          path: results/S3/
+          retention-days: 30

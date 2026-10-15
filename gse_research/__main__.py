@@ -15,9 +15,10 @@
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
-    python -m gse_research touch-search [--workers N]
+    python -m gse_research touch-search [--workers N] [--shard I --of N --out DIR] [--merge DIR]
         study S3: fresh and flipped level touches with inducement, stops, targets and trailing
-        (86,184 combinations), written to results/S3/
+        (86,184 combinations), written to results/S3/; --shard runs every N-th design into DIR,
+        --merge joins the parts in DIR and judges them (GitHub Actions: s3-search.yml)
     python -m gse_research locked-test results/<name>/rule.json --allow-test
         one-shot test of a frozen rule on the locked test period (owner approval)
     python -m gse_research worker [--once] [--poll 60]
@@ -67,6 +68,10 @@ def main() -> None:
     ms.add_argument("--workers", type=int, default=None)
     tsr = sub.add_parser("touch-search", help="study S3: fresh/flipped touches with inducement and exits")
     tsr.add_argument("--workers", type=int, default=None)
+    tsr.add_argument("--shard", type=int, default=None)
+    tsr.add_argument("--of", type=int, default=1)
+    tsr.add_argument("--out", type=Path, default=None)
+    tsr.add_argument("--merge", type=Path, default=None, help="folder with trials_part_*.csv to join and judge")
     lt = sub.add_parser("locked-test", help="one-shot test of a frozen rule on the locked test period")
     lt.add_argument("rule")
     lt.add_argument("--allow-test", action="store_true", help="open the locked test period (owner approval)")
@@ -113,8 +118,12 @@ def main() -> None:
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "touch-search":
-        out = touch_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True))
-        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+        progress = lambda f, m: print(f"{f:5.0%} {m}", flush=True)
+        if args.merge is not None:
+            out = touch_search.merge(args.merge, args.out, progress)
+        else:
+            out = touch_search.run_search(args.workers, args.out, progress, args.shard, args.of)
+        print(f"Written to {out}")
     elif args.command == "locked-test":
         out = locked_test.run(Path(args.rule).resolve(), args.allow_test)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")

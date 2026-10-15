@@ -132,8 +132,8 @@ def s3_window(monkeypatch):
 @needs_data
 def test_a_small_s3_group_runs_every_exit_and_filter(s3_window, monkeypatch):
     ts = s3_window
-    monkeypatch.setattr(ts, "DESIGN", {**ts.DESIGN, "level_type": ["fresh"], "h4_mode": ["off"]})
-    rows = pd.DataFrame(ts.evaluate_group("1H", 5, "limit"))
+    rows = pd.DataFrame(ts.evaluate_design({"chart_tf": "1H", "swing_len": 5, "level_type": "fresh",
+                                            "entry_mode": "limit", "h4_mode": "off"}))
     assert len(rows) == len(ts.STOPS) * len(ts.EXITS) * len(ts.INDUCEMENT) * 2
     plain = rows[(rows["inducement"] == "off") & ~rows["session"]]
     assert (plain["train_trades"] > 0).all()
@@ -142,3 +142,12 @@ def test_a_small_s3_group_runs_every_exit_and_filter(s3_window, monkeypatch):
     assert (merged["train_trades"] <= merged["train_trades_plain"]).all()
     effect = ts.inducement_effect(rows, min_trades=1)
     assert set(effect.index) == set(ts.INDUCEMENT) - {"off"}
+
+
+def test_shards_cover_every_design_once():
+    from gse_research import touch_search as ts
+    all_designs = ts.designs()
+    parts = [d for i in range(18) for d in all_designs[i::18]]
+    assert len(all_designs) == 108 and len(parts) == 108
+    assert sorted(map(str, parts)) == sorted(map(str, all_designs))
+    assert {d["chart_tf"] for d in all_designs[0::18]} == {"15m", "1H", "4H"}   # each shard mixes charts
