@@ -320,6 +320,16 @@ Run in three steps. Each step decides whether the next one is worth running.
 
 ---
 
+## Results so far (2026-10-15)
+
+- **S3** ([results/S3/report.md](results/S3/report.md)): the full search, 86,184 combinations (section 8 in one run), on GitHub Actions.
+  - **No combination passes validation.** The best training SQN (1.33) is far below the luck line (4.4). Of the top 20 on training, 19 lose on 2019–22, and the 20th makes +0.005 R.
+  - **Inducement does not help.** Against no inducement, everything else equal, every setting changes the result by at most ±0.06 R per trade, and improves only about half the pairs. "Present" (price runs straight into the level) is slightly worse.
+  - **Wider stops lose less** (3 ATR −0.13 R, against 1 ATR −0.32 R on validation), as in O3, S1 and S2. Trailing and fixed targets are about the same.
+- **O4** ([results/O4/report.md](results/O4/report.md)): the 15m strategy as written, with lookbacks 8/10/12 × H4 6/8/10. All nine lose about −0.9 R after costs and −0.15 to −0.27 R before costs. The v4.1 flip rules change almost nothing against v4.0 (O2).
+
+---
+
 ## 9. Before running it
 
 - **Much of trigger F has been tested already** (v4.0 levels; fresh levels are the same in v4.1). The results are in `results/`:

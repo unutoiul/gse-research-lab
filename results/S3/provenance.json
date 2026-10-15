@@ -1,0 +1,136 @@
+{
+  "git": {
+    "commit": "e390e0e45366fff6056ef4461dc6ab35be109831",
+    "dirty": false
+  },
+  "dataset_sha256": "7852581fbc17e758068240ec3545c12e4f410474b1eaaf189aa1d883de033e9c",
+  "study": "S3",
+  "design": {
+    "chart_tf": [
+      "15m",
+      "1H",
+      "4H"
+    ],
+    "swing_len": [
+      3,
+      5,
+      10
+    ],
+    "level_type": [
+      "fresh",
+      "flipped"
+    ],
+    "entry_mode": [
+      "limit",
+      "close_back"
+    ],
+    "h4_mode": [
+      "with",
+      "against",
+      "off"
+    ]
+  },
+  "stops": [
+    1.0,
+    1.5,
+    3.0
+  ],
+  "exits": {
+    "1R": [
+      1.0,
+      null
+    ],
+    "1.5R": [
+      1.5,
+      null
+    ],
+    "2R": [
+      2.0,
+      null
+    ],
+    "3R": [
+      3.0,
+      null
+    ],
+    "be_2R": [
+      2.0,
+      {
+        "be_r": 1.0,
+        "trail": "none",
+        "trail_start_r": 1.0,
+        "trail_atr": 2.0,
+        "buffer_atr": 0.2,
+        "tick": 0.01
+      }
+    ],
+    "trail_atr": [
+      NaN,
+      {
+        "be_r": 0.0,
+        "trail": "atr",
+        "trail_start_r": 1.0,
+        "trail_atr": 2.0,
+        "buffer_atr": 0.2,
+        "tick": 0.01
+      }
+    ],
+    "trail_swing": [
+      NaN,
+      {
+        "be_r": 0.0,
+        "trail": "swing",
+        "trail_start_r": 1.0,
+        "trail_atr": 2.0,
+        "buffer_atr": 0.2,
+        "tick": 0.01
+      }
+    ]
+  },
+  "inducement": [
+    "off",
+    "present_2",
+    "present_3",
+    "present_5",
+    "cleared_2",
+    "cleared_3",
+    "cleared_5",
+    "none_2",
+    "none_3",
+    "none_5",
+    "swept_2_5",
+    "swept_2_10",
+    "swept_2_20",
+    "swept_3_5",
+    "swept_3_10",
+    "swept_3_20",
+    "swept_5_5",
+    "swept_5_10",
+    "swept_5_20"
+  ],
+  "session": [
+    false,
+    true
+  ],
+  "flip_rules": "4.1",
+  "costs": {
+    "net": {
+      "path": "conservative",
+      "slippage": 0.1,
+      "spread_scale": 1.0
+    },
+    "half": {
+      "path": "conservative",
+      "slippage": 0.05,
+      "spread_scale": 0.5
+    },
+    "gross": {
+      "path": "conservative",
+      "slippage": 0.0,
+      "spread_scale": 0.0
+    }
+  },
+  "min_train_trades": 100,
+  "min_val_trades": 100,
+  "finalists": 20,
+  "status": "PROVISIONAL. The Stage 4 parity gate has not passed: TradingView's pivot tie rule is unverified (`strict` assumed) and the data is OANDA, not the BlackBull feed GSE runs on."
+}
