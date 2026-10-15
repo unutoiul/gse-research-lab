@@ -331,6 +331,9 @@ Run in three steps. Each step decides whether the next one is worth running.
   - **Fresh levels behave like random prices** at every lookback. On 15m the difference is within ±0.025.
   - **Flipped levels on 15m** do slightly better than random in both periods at every lookback (+0.02 to +0.065), but no interval excludes zero.
   - **Costs are the bigger problem.** One spread plus slippage is about 0.3 ATR on 15m, 0.14 on 1H and 0.07 on 4H. A 1:1 trade with a 1 ATR stop needs about 65% wins on 15m to break even; touches give 43–53%.
+- **F1** ([results/F1/report.md](results/F1/report.md), rule frozen in [results/F1/rule.json](results/F1/rule.json)): the forward test of E1's one hint, 15m flipped-level touches against random levels, on candles from 2026-10-13.
+  - The verdict waits for 400 resolved touches.
+  - The `forward-test` GitHub workflow reruns it every Monday.
 - **O4** ([results/O4/report.md](results/O4/report.md)): the 15m strategy as written, with lookbacks 8/10/12 × H4 6/8/10. All nine lose about −0.9 R after costs and −0.15 to −0.27 R before costs. The v4.1 flip rules change almost nothing against v4.0 (O2).
 
 ---
