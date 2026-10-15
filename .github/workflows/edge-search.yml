@@ -1,0 +1,107 @@
+# Study G1 (gse_research/edge_search.py): a broad rule search on 2016-2022 split over parallel
+# runners; one runner merges the parts, picks the finalists and runs the 2012-2015 holdout once
+# (results/G1/rule.json). Results: the "g1-results" artifact.
+name: edge-search
+run-name: "study G1 edge search"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PYTHONWARNINGS: ignore
+
+jobs:
+  data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
+      OANDA_ENV: ${{ secrets.OANDA_ENV }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Restore market data
+        uses: actions/cache/restore@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+          restore-keys: oanda-m15-
+      - name: Update market data (OANDA, only the missing candles)
+        run: python -m gse_research download
+      - name: Save market data
+        uses: actions/cache/save@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: market-data
+          path: |
+            data/XAU_USD_M15.parquet
+            data/manifest.json
+          retention-days: 3
+
+  shard:
+    needs: data
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: market-data
+          path: data
+      - name: Rules ${{ matrix.shard }}, ${{ matrix.shard }} + 8, ... (train and validation only)
+        run: python -m gse_research edge-search --shard ${{ matrix.shard }} --of 8 --out out/g1-parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g1-part-${{ matrix.shard }}
+          path: out/g1-parts/
+          retention-days: 7
+
+  merge:
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: market-data
+          path: data
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: g1-part-*
+          path: out/g1-parts
+          merge-multiple: true
+      - name: Merge, pick the finalists, run the holdout once
+        run: python -m gse_research edge-search --merge out/g1-parts --out results/G1
+      - name: Show the report on the summary page
+        run: cat results/G1/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g1-results
+          path: results/G1/
+          retention-days: 30

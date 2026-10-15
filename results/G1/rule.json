@@ -1,0 +1,17 @@
+{
+  "name": "G1",
+  "frozen": "2026-10-15",
+  "requested_by": "owner (chat, 2026-10-15: \"test everything until you are profitable... tests on github actions\")",
+  "search": "gse_research/edge_search.py at the commit that adds this file: 4,836 rules over 10 families (donchian, ema_cross, rsi2, asian_breakout, drift, big_bar, gse_break, gse_sweep, prev_day, ny_open) x sides x session filter x daily-trend filter x exits",
+  "discovery": {"train": ["2016-01-01", "2019-01-01"], "validation": ["2019-01-01", "2023-01-01"]},
+  "finalists": "at least 50 train and 70 validation trades, expectancy > 0 and profit factor >= 1.1 in both after costs; top 10 by min(train SQN, validation SQN)",
+  "holdout": {
+    "period": ["2012-01-01", "2016-01-01"],
+    "status": "never used by any study before this run; loaded only by the merge step, for the finalists",
+    "pass": "at least 50 trades, expectancy > 0, profit factor >= 1.2, 90% weekly-block bootstrap lower bound > 0 after a 10-way Bonferroni correction, at least 3 of 2012-2015 positive",
+    "otherwise": "weak (positive but short of a criterion), fail (expectancy <= 0), inconclusive (fewer than 50 trades)"
+  },
+  "costs": "OANDA bid/ask candles, 0.10 slippage on market entries, stops and market exits",
+  "not_used": "2023-01-01 onward (spent on X1)",
+  "after": "a rule that passes goes to a forward test on live data before any trading; one that does not is not rescued by changing it and rerunning the holdout"
+}

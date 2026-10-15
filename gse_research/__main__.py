@@ -18,6 +18,9 @@
         study E1: first touches of fresh and flipped levels against random levels, before costs, results/E1/
     python -m gse_research forward-test [--out DIR]
         forward test F1: flipped-level touches since 2026-10-13 against random levels, results/F1/
+    python -m gse_research edge-search --shard I --of N --out DIR | --merge DIR --out DIR
+        study G1: a broad rule search on 2016-2022, finalists judged once on the 2012-2015 holdout
+        (GitHub Actions: edge-search.yml)
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
@@ -47,7 +50,7 @@ import json
 
 import pandas as pd
 
-from . import data, event_study, experiments, forward, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
+from . import data, edge_search, event_study, experiments, forward, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
 
 
 def main() -> None:
@@ -75,6 +78,11 @@ def main() -> None:
     es.add_argument("--workers", type=int, default=None)
     fw = sub.add_parser("forward-test", help="forward test F1: flipped-level touches on unseen candles")
     fw.add_argument("--out", type=Path, default=None)
+    eg = sub.add_parser("edge-search", help="study G1: broad rule search with an untouched holdout")
+    eg.add_argument("--shard", type=int, default=None)
+    eg.add_argument("--of", type=int, default=1)
+    eg.add_argument("--out", type=Path, required=True)
+    eg.add_argument("--merge", type=Path, default=None, help="folder with trials_part_*.csv: join, pick finalists, holdout")
     ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
     ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
@@ -136,6 +144,13 @@ def main() -> None:
         out = forward.run(args.out)
         print(json.loads((out / "summary.json").read_text(encoding="utf-8"))["text"])
         print(f"Report: {out / 'report.md'}")
+    elif args.command == "edge-search":
+        progress = lambda f, m: print(f"{f:5.0%} {m}", flush=True)
+        if args.merge is not None:
+            out = edge_search.merge(args.merge, args.out)
+        else:
+            out = edge_search.run_shard(args.shard or 0, args.of, args.out, progress)
+        print(f"Written to {out}")
     elif args.command == "msnr-search":
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
