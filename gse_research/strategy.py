@@ -17,6 +17,7 @@ stop and target on the bid; shorts mirror it.
 
 from __future__ import annotations
 
+import bisect
 import math
 from dataclasses import dataclass
 
@@ -25,7 +26,7 @@ import pandas as pd
 
 from . import structure
 from .data import aggregate, align
-from .structure import ST_CAND, ST_FRESH, isna, pivots
+from .structure import ST_CAND, ST_FLIP, ST_FRESH, isna, pivots
 
 STOP_BUFFER_ATR, CLEARANCE_ATR, CLUSTER_ATR, MIN_R, MAX_ATR = 0.20, 0.10, 0.05, 1.5, 8.0
 AGE_LIMIT_MS = {0: 900_000, 1: 7_200_000, 2: 28_800_000}  # f_target_snapshot_valid: M15, H1 2h, H4 8h
@@ -53,10 +54,18 @@ class StrategyParams:
     entry_mode: str = "limit"
     # Which untouched levels can be entered: "fresh" A/V levels (the Pine), "flip" levels a body closed
     # through and nothing has touched since (flip candidates: Malaysian SnR's "fresh again"), or "both".
+    # "flipped": confirmed flipped levels (broken, retested and held) on their first touch after that
+    # confirming retest: the indicator's "Flipped support/resistance touched" alert.
     level_type: str = "fresh"
     # > 0: a fixed target this many times the risk, in place of the website's structure target
     # (no target rules then: every picked level is a signal).
     target_r: float = 0.0
+    # "4.0": the v4.0 level engine (the Pine strategy this module ports); "4.1": with v4.1's
+    # role-reversal rules (minimum touches, decisive break, move away first, failed flips).
+    flip_rules: str = "4.0"
+    # False: skip the Pine's check that the 1H/4H target snapshots are fresh. Only the website
+    # structure target reads them, so fixed-exit research variants (and the 4H chart) do without.
+    htf_check: bool = True
 
     def stop_distance(self, atr: float) -> float:
         """Fixed stop distance from the entry, or 0 for the Pine structural stop."""
@@ -64,7 +73,8 @@ class StrategyParams:
 
     def core(self, swing_len: int) -> structure.CoreParams:
         # strategy-inputs.pine constants: zone_count 8, flips on (35%, 20 bars), merging off, EQ 0.15 ATR.
-        return structure.CoreParams(swing_len=swing_len, tick=self.tick, pivot_ties=self.pivot_ties)
+        flips = structure.V41_FLIPS if self.flip_rules == "4.1" else {}
+        return structure.CoreParams(swing_len=swing_len, tick=self.tick, pivot_ties=self.pivot_ties, **flips)
 
 
 # ── f_fresh_h4 (strategy-helpers.pine:2-24) ─────────────────────────────
@@ -95,7 +105,13 @@ def fresh_h4(h4: pd.DataFrame, swing_len: int, ties: str = "strict") -> np.ndarr
     return out
 
 
-ENTRY_STATES = {"fresh": (ST_FRESH,), "flip": (ST_CAND,), "both": (ST_FRESH, ST_CAND)}
+ENTRY_STATES = {"fresh": (ST_FRESH,), "flip": (ST_CAND,), "both": (ST_FRESH, ST_CAND), "flipped": (ST_FLIP,)}
+
+
+def first_touch(lv) -> bool:
+    """Not yet touched in its current state: no touch for a fresh level or a flip candidate; for a
+    confirmed flipped level, only its confirming retest (core.pine sets touches to 1 there)."""
+    return lv.touches == (1 if lv.state == ST_FLIP else 0)
 
 
 def touch_pick(levels, h4_dir: int, bar_close: float, states: tuple = (ST_FRESH,)):
@@ -103,7 +119,7 @@ def touch_pick(levels, h4_dir: int, bar_close: float, states: tuple = (ST_FRESH,
     trade side (support for a long, resistance for a short; in the Pine the trade side is the H4 side)."""
     best = None
     for lv in levels:
-        if lv.state in states and lv.touches == 0 and not lv.in_contact and lv.role == h4_dir and lv.role * (bar_close - lv.price) > 0:
+        if lv.state in states and first_touch(lv) and not lv.in_contact and lv.role == h4_dir and lv.role * (bar_close - lv.price) > 0:
             if best is None or abs(bar_close - lv.price) < abs(bar_close - best.price):
                 best = lv
     return best
@@ -128,6 +144,78 @@ def reaction_pick(levels, d: int, was_fresh: set, o: float, h: float, l: float, 
             if best is None or abs(c - lv.price) < abs(c - best.price):
                 best = lv
     return best
+
+
+# ── Inducement: minor wick swings in front of the level (research variant) ─
+
+IND_MAX_AGE = 20     # candles a sweep of a minor swing is remembered (the longest age tested)
+TRAIL_LEN = 3        # minor swing lookback of the swing trailing stop
+
+
+@dataclass
+class Minors:
+    """Confirmed minor wick swings of one side (lows: the support side, highs: the resistance side), in
+    confirmation order. `taken` is the first later candle whose wick goes beyond the swing (len(chart) if
+    none); `swept` says that candle closed back on the swing's side; `extreme` is its low / high."""
+    confirm: list
+    origin: list
+    price: list
+    taken: list
+    swept: list
+    extreme: list
+    sweep_bar: list | None = None    # the swept swings, ordered by the candle that swept them
+    sweep_idx: list | None = None
+
+
+def minor_swings(chart: pd.DataFrame, k: int, lows: bool, ties: str = "strict") -> Minors:
+    h, l, c = (chart[x].to_numpy(float) for x in ("high", "low", "close"))
+    piv = pivots(l if lows else h, k, k, not lows, ties)
+    n = len(c)
+    m = Minors([], [], [], [], [], [])
+    for cb in np.flatnonzero(~np.isnan(piv)):
+        px = piv[cb]
+        j, step, taken = cb + 1, 64, n
+        while j < n:
+            seg = l[j:j + step] < px if lows else h[j:j + step] > px
+            if seg.any():
+                taken = j + int(np.argmax(seg))
+                break
+            j, step = j + step, step * 2
+        m.confirm.append(int(cb)); m.origin.append(int(cb - k)); m.price.append(float(px)); m.taken.append(taken)
+        if taken < n:
+            m.swept.append(bool(c[taken] > px) if lows else bool(c[taken] < px))
+            m.extreme.append(float(l[taken] if lows else h[taken]))
+        else:
+            m.swept.append(False); m.extreme.append(math.nan)
+    order = sorted((tk, i) for i, (tk, sw) in enumerate(zip(m.taken, m.swept)) if sw)
+    m.sweep_bar, m.sweep_idx = [tk for tk, _ in order], [i for _, i in order]
+    return m
+
+
+def inducement(m: Minors, d: int, level_price: float, after_bar: int, t: int, cutoff: int) -> tuple[int, int]:
+    """Inducement in front of a level, as known at the close of candle t.
+
+    Eligible: a minor swing on the trade side (lows for a long) that formed after `after_bar` and lies
+    beyond the level, between it and price. Returns (state, sweep_age). state: 0 no eligible swing,
+    1 the newest one is still untaken (present), 2 it was taken by candle `cutoff` (cleared).
+    sweep_age: t minus the latest candle up to `cutoff` that went beyond an eligible swing and closed
+    back, its extreme still short of the level (swept); -1 if none within IND_MAX_AGE.
+    `cutoff` is t for a resting limit, t - 1 when candle t is the touch itself."""
+    state, i = 0, bisect.bisect_right(m.confirm, t) - 1
+    while i >= 0 and m.origin[i] > after_bar:
+        if d * (m.price[i] - level_price) > 0:
+            state = 2 if m.taken[i] <= cutoff else 1
+            break
+        i -= 1
+    age = -1
+    j = bisect.bisect_right(m.sweep_bar, cutoff) - 1
+    while j >= 0 and m.sweep_bar[j] >= cutoff - IND_MAX_AGE:
+        k = m.sweep_idx[j]
+        if m.origin[k] > after_bar and d * (m.price[k] - level_price) > 0 and d * (m.extreme[k] - level_price) > 0:
+            age = t - m.sweep_bar[j]
+            break
+        j -= 1
+    return state, age
 
 
 # ── Target snapshots (strategy-target-data.pine) ────────────────────────
@@ -338,14 +426,20 @@ def d1_inputs(chart: pd.DataFrame, p: StrategyParams, history: pd.DataFrame | No
 
 
 def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple | None = None, h4: tuple | None = None,
-            d1: np.ndarray | None = None) -> pd.DataFrame:
+            d1: np.ndarray | None = None, ind_lens: tuple = ()) -> pd.DataFrame:
     """For every chart close: trade direction, the picked level and its frozen plan, or why there is none.
 
     The chart is the 15m frame of the Pine strategy, or a 1H frame (research variant: the Pine
     strategy trades only on 15m). `dir` is the trade direction (the H4 direction, or its opposite
     when h4_mode is "against"); `h4_dir` is the H4 direction itself; `d1` the 1D bias when used.
     `order` is "limit" (a limit at the level, as in the Pine) or "market" (entry_mode "rejection" or
-    "close_back": a market order at the next open after the confirming candle, planned from its close)."""
+    "close_back": a market order at the next open after the confirming candle, planned from its close).
+    h4_mode "off" (research variant) trades either side: the nearest enterable support or resistance.
+
+    `ind_lens`: minor swing lookbacks for which each signal records its inducement (`ind{k}_state`,
+    `ind{k}_sweep_age`; see `inducement`)."""
+    if h1 is None and not p.htf_check:
+        h1 = ([], np.zeros(len(m15)), np.zeros(len(m15), dtype=np.int64))  # read only by the snapshot check
     h1_pk, h1_idx, h1_close = h1 if h1 is not None else h1_inputs(m15, p)
     h4_pk, h4_idx, h4_close, dir_seen = h4 if h4 is not None else h4_inputs(m15, p)
     decision = _ms(m15["close_time"])
@@ -357,45 +451,73 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
     O, H, Lo = (m15[k].to_numpy(float) for k in ("open", "high", "low"))
     states = ENTRY_STATES[p.level_type]
     track = {"fresh": set()}  # ids of enterable, untouched levels at the previous close (confirmed entries)
-    flip = {"with": 1, "against": -1}[p.h4_mode]
+    flip = {"with": 1, "against": -1, "off": 0}[p.h4_mode]
     d1_want = {"off": 0, "with": 1, "against": -1}[p.d1_mode]
     if d1_want and d1 is None:
         d1 = d1_inputs(m15, p)
+    sides = {k: {1: minor_swings(m15, k, True, p.pivot_ties), -1: minor_swings(m15, k, False, p.pivot_ties)} for k in ind_lens}
+    for k in ind_lens:
+        cols[f"ind{k}_state"], cols[f"ind{k}_sweep_age"] = [0] * n, [-1] * n
+
+    def nearest(a, b, c):
+        return a if b is None else b if a is None else (a if abs(c - a.price) <= abs(c - b.price) else b)
 
     def hook(t, levels, eqh, eql, pdh, pdl, pwh, pwl, atr, c):
-        was_fresh, track["fresh"] = track["fresh"], {lv.id for lv in levels if lv.state in states and lv.touches == 0}
+        # A flipped level still sitting on its confirming retest is not a new visit (alerts.pine watch list).
+        was_fresh, track["fresh"] = track["fresh"], {lv.id for lv in levels if lv.state in states and first_touch(lv)
+                                                     and not (lv.state == ST_FLIP and lv.in_contact)}
         cols["atr"][t] = atr
         h4 = 0 if isna(dir_seen[t]) else int(np.sign(dir_seen[t]))
         d = h4 * flip
         cols["dir"][t], cols["h4_dir"][t] = d, h4
-        h1_ok = not isna(h1_idx[t]) and snapshot_valid(1, h1_close[t], decision[t])
-        h4_ok = not isna(h4_idx[t]) and snapshot_valid(2, h4_close[t], decision[t])
-        if not (h1_ok and h4_ok):
-            cols["reason"][t] = "waiting_htf_data"
-            return
-        if d == 0:
+        if p.htf_check:
+            h1_ok = not isna(h1_idx[t]) and snapshot_valid(1, h1_close[t], decision[t])
+            h4_ok = not isna(h4_idx[t]) and snapshot_valid(2, h4_close[t], decision[t])
+            if not (h1_ok and h4_ok):
+                cols["reason"][t] = "waiting_htf_data"
+                return
+        if d == 0 and flip != 0:
             cols["reason"][t] = "no_h4_direction"
             return
-        if d1_want:
+
+        def d1_blocks(side):
             cols["d1"][t] = d1[t]
-            if isna(d1[t]) or np.sign(d1[t]) != d * d1_want:  # a neutral (0) day trades neither way
+            if isna(d1[t]) or np.sign(d1[t]) != side * d1_want:  # a neutral (0) day trades neither way
                 cols["reason"][t] = "d1_context"
-                return
+                return True
+            return False
+        if d1_want and flip and d1_blocks(d):
+            return
         if confirm:
-            lv = reaction_pick(levels, d, was_fresh, O[t], H[t], Lo[t], c, strict=p.entry_mode == "rejection")
+            strict = p.entry_mode == "rejection"
+            pick = lambda side: reaction_pick(levels, side, was_fresh, O[t], H[t], Lo[t], c, strict=strict)
+            lv = pick(d) if flip else nearest(pick(1), pick(-1), c)
             if lv is None:
                 cols["reason"][t] = "no_rejection"
                 return
+        else:
+            lv = touch_pick(levels, d, c, states) if flip else nearest(touch_pick(levels, 1, c, states),
+                                                                       touch_pick(levels, -1, c, states), c)
+            if lv is None:
+                cols["reason"][t] = "no_fresh_level"
+                return
+        if not flip:
+            d = lv.role
+            cols["dir"][t] = d
+            if d1_want and d1_blocks(d):
+                return
+        if confirm:
             # Planned from the rejection close; the stop goes beyond the rejection wick.
             extreme = Lo[t] if d == 1 else H[t]
             entry, wick = c, extreme if isna(lv.wick) else (min(extreme, lv.wick) if d == 1 else max(extreme, lv.wick))
         else:
-            lv = touch_pick(levels, d, c, states)
-            if lv is None:
-                cols["reason"][t] = "no_fresh_level"
-                return
             # A flip candidate has no wick yet: its invalidation is the level itself.
             entry, wick = lv.price, lv.price if isna(lv.wick) else lv.wick
+        # Inducement counts from the level's own pivot, or for a flipped level from its break.
+        after = lv.born_bar if lv.state == ST_FLIP else lv.origin_bar
+        for k in ind_lens:
+            state, age = inducement(sides[k][d], d, lv.price, after, t, t - 1 if confirm else t)
+            cols[f"ind{k}_state"][t], cols[f"ind{k}_sweep_age"][t] = state, age
         if p.target_r > 0:
             plan = fixed_plan(d, entry, wick, atr, p)
         else:
@@ -416,6 +538,10 @@ def signals(m15: pd.DataFrame, p: StrategyParams = StrategyParams(), h1: tuple |
     # Confluence readings at each close, from the same level engine (chart bias, sweeps, sessions).
     for k in FEATURES:
         out[k] = eng[k].to_numpy()
+    # The latest confirmed minor swing low / high at each close, for the swing trailing stop.
+    for name, lows in (("swing_low", True), ("swing_high", False)):
+        src = m15["low" if lows else "high"].to_numpy(float)
+        out[name] = pd.Series(pivots(src, TRAIL_LEN, TRAIL_LEN, not lows, p.pivot_ties)).ffill().to_numpy()
     return out
 
 
@@ -429,6 +555,22 @@ class Broker:
     path: str = "conservative"   # or "tradingview"
     slippage: float = 0.10       # adverse, on stop fills and the end-of-range market close
     spread_scale: float = 1.0    # 1: OANDA bid/ask; 0.5: half the spread (raw-spread account); 0: mid prices
+
+
+@dataclass(frozen=True)
+class Manage:
+    """Research variant: moving the stop of an open trade. Decided at a candle's close from that close
+    (on the exit side's prices) and working from the next candle, so it never uses a candle's own extremes.
+    be_r > 0: once a close is be_r R in profit, the stop moves to the fill price.
+    trail "atr": once a close is trail_start_r R in profit, the stop trails trail_atr chart ATRs behind the
+    best close; "swing": beyond the latest confirmed minor swing (lookback TRAIL_LEN), less the website's
+    0.2 ATR stop buffer. A stop only moves toward profit and stays behind the close."""
+    be_r: float = 0.0
+    trail: str = "none"
+    trail_start_r: float = 1.0
+    trail_atr: float = 2.0
+    buffer_atr: float = STOP_BUFFER_ATR
+    tick: float = 0.01
 
 
 HIGH_FIRST, LOW_FIRST = ["o", "h", "l", "c"], ["o", "l", "h", "c"]
@@ -448,8 +590,11 @@ def _path(o, h, l, c, model: str, d: int, in_position: bool) -> list[str]:
     return adverse_first if in_position else favourable_first
 
 
-def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker: Broker = Broker()) -> tuple[pd.DataFrame, dict]:
-    """Run the order logic over [start, end) by candle close time. Returns trades and order counts."""
+def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker: Broker = Broker(),
+             manage: Manage | None = None) -> tuple[pd.DataFrame, dict]:
+    """Run the order logic over [start, end) by candle close time. Returns trades and order counts.
+
+    A NaN target (`tp2`) means no target: the trade ends at its (managed) stop or at the range end."""
     t_start, t_end = pd.Timestamp(start, tz="UTC"), pd.Timestamp(end, tz="UTC")
     in_test = ((m15["close_time"] >= t_start) & (m15["close_time"] < t_end)).to_numpy()
     after_end = (m15["close_time"] >= t_end).to_numpy()
@@ -461,6 +606,31 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
     S["order"] = sig["order"].tolist() if "order" in sig else ["limit"] * len(sig)
     key = {"o": "open", "h": "high", "l": "low", "c": "close"}
     slip = broker.slippage
+    TIMES = m15["time"].tolist()
+    if manage is not None:
+        ATR = sig["atr"].to_numpy(float)
+        SWING = {1: sig["swing_low"].to_numpy(float), -1: sig["swing_high"].to_numpy(float)}
+
+    def manage_stop(t):
+        d = pos["dir"]
+        cl = (bid if d == 1 else ask)["close"][t]
+        pos["peak_R"] = max(pos.get("peak_R", 0.0), d * (cl - pos["fill"]) / pos["risk"])
+        if pos.get("best_close") is None or d * (cl - pos["best_close"]) > 0:
+            pos["best_close"] = cl
+        new = pos["stop"]
+        if manage.be_r > 0 and pos["peak_R"] >= manage.be_r and d * (pos["fill"] - new) > 0:
+            new = pos["fill"]
+        if manage.trail != "none" and pos["peak_R"] >= manage.trail_start_r and not isna(ATR[t]):
+            if manage.trail == "atr":
+                cand = pos["best_close"] - d * manage.trail_atr * ATR[t]
+            else:
+                cand = SWING[d][t] - d * max(manage.tick, manage.buffer_atr * ATR[t])
+            if not isna(cand):
+                cand = target_round(cand, manage.tick, d)
+                if d * (cand - new) > 0:
+                    new = cand
+        if d * (new - pos["stop"]) > 0 and d * (cl - new) > 0:
+            pos["stop"], pos["stop_moved"] = new, True
 
     trades, pos, pending = [], None, None
     submitted_signal = None
@@ -470,8 +640,10 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
 
     def exit_trade(t, price, reason):
         d = pos["dir"]
+        if reason in ("stop", "stop_gap") and pos.get("stop_moved"):
+            reason = "managed_" + reason
         R = d * (price - pos["fill"]) / pos["risk"]
-        trades.append({**pos, "exit_time": m15["time"].iat[t], "exit": price, "reason": reason,
+        trades.append({**pos, "exit_time": TIMES[t], "exit": price, "reason": reason,
                        "bars_held": t - pos["fill_bar"] + 1, "R": R,
                        "mfe_R": pos["best"] / pos["risk"], "mae_R": min(pos["worst"] / pos["risk"], max(1.0, -R))})
 
@@ -515,7 +687,7 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
                     # the actual risk smaller, or nil.
                     planned = d * (pending["entry"] - pending["stop"])
                     fill_risk = d * (fill - pending["stop"])
-                    pos = {**pending, "fill": fill, "fill_bar": t, "fill_time": m15["time"].iat[t], "risk": planned,
+                    pos = {**pending, "fill": fill, "fill_bar": t, "fill_time": TIMES[t], "risk": planned,
                            "fill_risk": fill_risk, "best": 0.0, "worst": 0.0}
                     pending = None
                     counts["filled"] += 1
@@ -546,6 +718,8 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
                             break
 
         # ── At the close of candle t (strategy.pine:44-78).
+        if manage is not None and pos is not None:
+            manage_stop(t)
         if pos is not None or closed_this_bar:
             pending = None
         if after_end[t]:
@@ -565,7 +739,7 @@ def simulate(m15: pd.DataFrame, sig: pd.DataFrame, start: str, end: str, broker:
         can_enter = in_test[t] and pos is None and pending is None and submitted_signal != t
         if can_enter and S["signal"][t]:
             submitted_signal = t
-            pending = {"signal_bar": t, "signal_time": m15["time"].iat[t], "dir": int(S["dir"][t]), "order": S["order"][t],
+            pending = {"signal_bar": t, "signal_time": TIMES[t], "dir": int(S["dir"][t]), "order": S["order"][t],
                        "level_id": int(S["level_id"][t]), "entry": S["entry"][t], "stop": S["stop"][t],
                        "tp1": S["tp1"][t], "tp2": S["tp2"][t], "tp3": S["tp3"][t]}
             counts["submitted"] += 1

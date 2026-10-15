@@ -1,16 +1,16 @@
-// Pine oracle: runs GSE v4.0's own f_core_update and f_context_update, translated
+// Pine oracle: runs GSE v4.0's (or v4.1's) own f_core_update and f_context_update, translated
 // from the Pine source text by gse-website's test-pine-subset.mjs, candle by
 // candle. Built-in series (ta.atr, ta.ema, ta.pivothigh/low, ta.sma,
 // request.security, time()) are replaced by precomputed inputs, so the Python
 // port and this oracle receive identical inputs and any difference is logic.
 //
-//   node pine_oracle.mjs <gse-website dir> <input.json> <output.jsonl>
+//   node pine_oracle.mjs <gse-website dir> <input.json> <output.jsonl> [4.0|4.1]
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const [, , websiteDir, inputPath, outputPath] = process.argv;
-const gse = path.join(websiteDir, 'tradingview', 'gse_4.0');
+const [, , websiteDir, inputPath, outputPath, version = '4.0'] = process.argv;
+const gse = path.join(websiteDir, 'tradingview', `gse_${version}`);
 const read = name => readFileSync(path.join(gse, 'src', `${name}.pine`), 'utf8').replace(/\r\n/g, '\n');
 const { translate } = await import(pathToFileURL(path.join(gse, 'test-pine-subset.mjs')).href);
 
@@ -78,8 +78,8 @@ const array = {
   get: (a, i) => a[i], remove: (a, i) => a.splice(i, 1)[0], push: (a, x) => { a.push(x); },
   shift: a => a.shift(), includes: (a, x) => a.includes(x),
 };
-const Lvl = { new: (id, price, role, state, touches, wick = NaN, origin_bar = NaN, born_bar = NaN, kind = '', in_contact = false) =>
-  ({ id, price, role, state, touches, wick, origin_bar, born_bar, kind, in_contact }) };
+const Lvl = { new: (id, price, role, state, touches, wick = NaN, origin_bar = NaN, born_bar = NaN, kind = '', in_contact = false, excursion = NaN) =>
+  ({ id, price, role, state, touches, wick, origin_bar, born_bar, kind, in_contact, excursion }) };
 const LvlEvent = { new: (kind, price) => ({ kind, price }) };
 const EqPivotEvent = { new: (...a) => a };
 const timeframe = { period: '15', isintraday: true, isdaily: false, change: tf => (tf === 'D' ? IN.new_day : IN.new_week) };
@@ -90,24 +90,29 @@ const color = new Proxy({}, { get: (_, k) => String(k) });
 const lastTrue = new Map();
 const BS = (key, cond) => { if (cond) lastTrue.set(key, bar_index); return lastTrue.has(key) ? bar_index - lastTrue.get(key) : NaN; };
 const [ST_FRESH, ST_TAPPED, ST_CAND, ST_FLIP] = [0, 1, 2, 3];
-const [EVT_FLIP_TO_SUP, EVT_FLIP_TO_RES, EVT_TAP_RES, EVT_TAP_SUP] = [0, 1, 4, 5];
+const [EVT_FLIP_TO_SUP, EVT_FLIP_TO_RES, EVT_TAP_RES, EVT_TAP_SUP, EVT_FLIP_FAIL_SUP, EVT_FLIP_FAIL_RES] = [0, 1, 4, 5, 6, 7];
 const open_at = j => D.open[T - j], high_at = j => D.high[T - j], low_at = j => D.low[T - j], close_at = j => D.close[T - j];
 
 const fns = new Function(
   'isNA', 'nz', 'array', 'Lvl', 'LvlEvent', 'EqPivotEvent', 'timeframe', 'time', 'syminfo', 'barstate', 'color', 'BS',
   'ST_FRESH', 'ST_TAPPED', 'ST_CAND', 'ST_FLIP', 'EVT_FLIP_TO_SUP', 'EVT_FLIP_TO_RES', 'EVT_TAP_RES', 'EVT_TAP_SUP',
+  'EVT_FLIP_FAIL_SUP', 'EVT_FLIP_FAIL_RES',
   'open_at', 'high_at', 'low_at', 'close_at', 'G',
   // Series globals are read through G so the driver can set them per candle.
   `with (G) { ${js}\n return { f_core_update, f_context_update }; }`,
 )(isNA, nz, array, Lvl, LvlEvent, EqPivotEvent, timeframe, time, syminfo, barstate, color, BS,
   ST_FRESH, ST_TAPPED, ST_CAND, ST_FLIP, EVT_FLIP_TO_SUP, EVT_FLIP_TO_RES, EVT_TAP_RES, EVT_TAP_SUP,
+  EVT_FLIP_FAIL_SUP, EVT_FLIP_FAIL_RES,
   open_at, high_at, low_at, close_at, new Proxy({}, {
     has: (_, k) => ['open', 'high', 'low', 'close', 'volume', 'bar_index', 'IN'].includes(k),
     get: (_, k) => ({ open, high, low, close, volume, bar_index, IN })[k],
   }));
 
 const inp = { swing_len: P.swing_len, zone_count: P.zone_count, flip_on: true, flip_wick: 35.0, cluster_on: false,
-  cluster_atr: 0.5, flip_max_age: 20, eq_atr: 0.15, sweep_snr_atr: 3.0, break_fallback: true };
+  cluster_atr: 0.5, flip_max_age: 20, eq_atr: 0.15, sweep_snr_atr: 3.0, break_fallback: true,
+  // v4.1 role-reversal settings (ignored by the v4.0 source).
+  flip_min_touches: P.flip_min_touches ?? 0, flip_decisive: P.flip_decisive ?? false, flip_buffer_atr: P.flip_buffer_atr ?? 0.1,
+  flip_away_atr: P.flip_away_atr ?? 0, flip_failed_on: P.flip_failed_on ?? false };
 const cinp = { space_mult: 2.0, confl_window: 15, sweep_bos_win: 6, conf_cluster: 8, rej_atr: 2.0,
   require_sweep: P.require_sweep, w_str: 35, w_loc: 30, w_conf: 25, w_time: 10, gate_cap: 60 };
 const cs = { ph1: NaN, ph2: NaN, pl1: NaN, pl2: NaN, ph1_bar: NaN, pl1_bar: NaN, struct_dir: 0, used_ph_bar: NaN,

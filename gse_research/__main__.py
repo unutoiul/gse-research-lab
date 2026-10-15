@@ -15,6 +15,9 @@
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
+    python -m gse_research touch-search [--workers N]
+        study S3: fresh and flipped level touches with inducement, stops, targets and trailing
+        (86,184 combinations), written to results/S3/
     python -m gse_research locked-test results/<name>/rule.json --allow-test
         one-shot test of a frozen rule on the locked test period (owner approval)
     python -m gse_research worker [--once] [--poll 60]
@@ -37,7 +40,7 @@ import json
 
 import pandas as pd
 
-from . import data, experiments, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, worker
+from . import data, experiments, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
 
 
 def main() -> None:
@@ -62,6 +65,8 @@ def main() -> None:
     ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
     ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
+    tsr = sub.add_parser("touch-search", help="study S3: fresh/flipped touches with inducement and exits")
+    tsr.add_argument("--workers", type=int, default=None)
     lt = sub.add_parser("locked-test", help="one-shot test of a frozen rule on the locked test period")
     lt.add_argument("rule")
     lt.add_argument("--allow-test", action="store_true", help="open the locked test period (owner approval)")
@@ -106,6 +111,9 @@ def main() -> None:
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "msnr-search":
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)
+        print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
+    elif args.command == "touch-search":
+        out = touch_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True))
         print(f"Report: {(out / 'report.md').relative_to(data.ROOT)}")
     elif args.command == "locked-test":
         out = locked_test.run(Path(args.rule).resolve(), args.allow_test)

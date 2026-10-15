@@ -1,4 +1,4 @@
-"""GSE v4.0 market structure and context, ported from the Pine source.
+"""GSE v4.0 market structure and context, ported from the Pine source (v4.1 flip rules optional).
 
 A candle-by-candle port of `core.pine` (`f_core_update`), `context.pine`
 (`f_context_update`) and `mtf.pine` (`f_bias_score`) at gse-website commit
@@ -26,6 +26,8 @@ from .data import aggregate, align, session_clock
 NAN = math.nan
 ST_FRESH, ST_TAPPED, ST_CAND, ST_FLIP = 0, 1, 2, 3
 EVT_FLIP_TO_SUP, EVT_FLIP_TO_RES, EVT_TAP_RES, EVT_TAP_SUP = 0, 1, 4, 5
+# v4.1: a flip candidate closed back through, a false break (candidate role support / resistance).
+EVT_FLIP_FAIL_SUP, EVT_FLIP_FAIL_RES = 6, 7
 
 # Golden Zone conditions in the audit's rejection order (4.1), as bits.
 GZ_DIRECTION, GZ_LOCATION, GZ_BIAS, GZ_BOS, GZ_ROOM, GZ_SWEEP = 1, 2, 4, 8, 16, 32
@@ -55,6 +57,16 @@ class CoreParams:
     # How ta.pivothigh/pivotlow treat equal values. TradingView's rule is
     # unknown (audit P1) until the parity gate settles it.
     pivot_ties: str = "strict"
+    # GSE v4.1 role-reversal rules (gse_4.1 core.pine). The defaults here are the v4.0
+    # behaviour; V41_FLIPS holds the v4.1 defaults.
+    flip_min_touches: int = 0
+    flip_decisive: bool = False
+    flip_buffer_atr: float = 0.1
+    flip_away_atr: float = 0.0
+    flip_failed_on: bool = False
+
+
+V41_FLIPS = {"flip_min_touches": 1, "flip_decisive": True, "flip_buffer_atr": 0.1, "flip_away_atr": 1.0, "flip_failed_on": True}
 
 
 @dataclass(frozen=True)
@@ -85,6 +97,7 @@ class Level:
     born_bar: int = -1
     kind: str = ""
     in_contact: bool = False
+    excursion: float = NAN  # v4.1: farthest move beyond a flip candidate since its break
 
 
 # ── Pine series functions ───────────────────────────────────────────────
@@ -357,10 +370,13 @@ def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams =
         trend = resolve_bias(raw, s.struct_dir, ema_pts, core.break_fallback)
         swing_conflict = s.struct_dir != 0 and s.struct_dir * raw < 0
 
-        # 5. Level maintenance (core:304-388)
+        # 5. Level maintenance (core:304-388; v4.1 core.pine with its role-reversal rules)
         levels = s.levels
         if levels:
             rng = max(h - l, tick)
+            flip_buffer = (0.0 if isna(atr) else atr) * core.flip_buffer_atr if core.flip_decisive else 0.0
+            flip_away = (0.0 if isna(atr) else atr) * core.flip_away_atr
+            body_ok = abs(c - o) >= (h - l) * 0.5
             i = 0
             while i < len(levels):
                 lv = levels[i]
@@ -371,9 +387,12 @@ def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams =
                     if t - lv.born_bar > core.flip_max_age:
                         remove = True
                     elif lv.role == 1:
-                        if c < lv.price:
+                        lv.excursion = max(0.0 if isna(lv.excursion) else lv.excursion, h - lv.price)
+                        if c < lv.price - flip_buffer:
                             remove = True
-                        elif intersects:
+                            if core.flip_failed_on:
+                                events.append({"bar": t, "event": EVT_FLIP_FAIL_SUP, "id": lv.id, "price": lv.price})
+                        elif intersects and lv.excursion >= flip_away:
                             if new_test:
                                 lv.touches += 1
                             lv.wick = min(lv.price if isna(lv.wick) else lv.wick, l)
@@ -382,9 +401,12 @@ def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams =
                                 lv.state, lv.touches = ST_FLIP, 1
                                 events.append({"bar": t, "event": EVT_FLIP_TO_SUP, "id": lv.id, "price": lv.price})
                     else:
-                        if c > lv.price:
+                        lv.excursion = max(0.0 if isna(lv.excursion) else lv.excursion, lv.price - l)
+                        if c > lv.price + flip_buffer:
                             remove = True
-                        elif intersects:
+                            if core.flip_failed_on:
+                                events.append({"bar": t, "event": EVT_FLIP_FAIL_RES, "id": lv.id, "price": lv.price})
+                        elif intersects and lv.excursion >= flip_away:
                             if new_test:
                                 lv.touches += 1
                             lv.wick = max(lv.price if isna(lv.wick) else lv.wick, h)
@@ -394,8 +416,10 @@ def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams =
                                 events.append({"bar": t, "event": EVT_FLIP_TO_RES, "id": lv.id, "price": lv.price})
                 elif lv.role == -1:
                     if c > lv.price:
-                        if core.flip_on and lv.state != ST_FLIP:
+                        decisive = not core.flip_decisive or (c > lv.price + flip_buffer and c > o and body_ok)
+                        if core.flip_on and lv.state != ST_FLIP and lv.touches >= core.flip_min_touches and decisive:
                             lv.role, lv.state, lv.born_bar, lv.kind, lv.touches, lv.wick = 1, ST_CAND, t, "Flip", 0, NAN
+                            lv.excursion = h - lv.price
                         else:
                             remove = True
                     elif intersects:
@@ -407,8 +431,10 @@ def run(m15: pd.DataFrame, core: CoreParams = CoreParams(), ctx: ContextParams =
                                 events.append({"bar": t, "event": EVT_TAP_RES, "id": lv.id, "price": lv.price})
                 else:
                     if c < lv.price:
-                        if core.flip_on and lv.state != ST_FLIP:
+                        decisive = not core.flip_decisive or (c < lv.price - flip_buffer and c < o and body_ok)
+                        if core.flip_on and lv.state != ST_FLIP and lv.touches >= core.flip_min_touches and decisive:
                             lv.role, lv.state, lv.born_bar, lv.kind, lv.touches, lv.wick = -1, ST_CAND, t, "Flip", 0, NAN
+                            lv.excursion = lv.price - l
                         else:
                             remove = True
                     elif intersects:

@@ -50,33 +50,43 @@ def _same(a, b) -> bool:
     return a == b
 
 
-def _oracle(m15, prep, tmp_path: Path, require_sweep: bool) -> list[dict]:
+def _oracle(m15, prep, tmp_path: Path, require_sweep: bool, core: structure.CoreParams = structure.CoreParams(),
+            version: str = "4.0") -> list[dict]:
     payload = {k: m15[k].tolist() for k in ("open", "high", "low", "close")}
     payload["volume"] = m15["volume"].astype(float).tolist()
     for k in prep.columns:
         payload[k] = [None if (isinstance(v, float) and math.isnan(v)) else (bool(v) if isinstance(v, bool) or k.startswith(("new_", "in_")) else v)
                       for v in prep[k].tolist()]
-    params = structure.CoreParams()
-    payload["params"] = {"swing_len": params.swing_len, "zone_count": params.zone_count, "tick": params.tick,
-                         "require_sweep": require_sweep}
+    payload["params"] = {"swing_len": core.swing_len, "zone_count": core.zone_count, "tick": core.tick,
+                         "require_sweep": require_sweep, "flip_min_touches": core.flip_min_touches,
+                         "flip_decisive": core.flip_decisive, "flip_buffer_atr": core.flip_buffer_atr,
+                         "flip_away_atr": core.flip_away_atr, "flip_failed_on": core.flip_failed_on}
     src, out = tmp_path / "input.json", tmp_path / "oracle.jsonl"
     src.write_text(json.dumps(payload))
-    subprocess.run(["node", str(ORACLE), str(WEBSITE), str(src), str(out)], check=True, capture_output=True, text=True)
+    subprocess.run(["node", str(ORACLE), str(WEBSITE), str(src), str(out), version], check=True, capture_output=True, text=True)
     return [json.loads(line) for line in out.read_text().splitlines()]
 
 
-@pytest.mark.parametrize("start, end, require_sweep", [
-    ("2016-01-01", "2016-07-01", False),
-    ("2022-07-01", "2023-07-01", False),
-    ("2022-07-01", "2023-07-01", True),
+V41 = structure.CoreParams(**structure.V41_FLIPS)
+
+
+@pytest.mark.parametrize("start, end, require_sweep, core, version", [
+    ("2016-01-01", "2016-07-01", False, structure.CoreParams(), "4.0"),
+    ("2022-07-01", "2023-07-01", False, structure.CoreParams(), "4.0"),
+    ("2022-07-01", "2023-07-01", True, structure.CoreParams(), "4.0"),
+    # v4.1 role-reversal rules: the v4.1 Pine source with its defaults, and with lookback 3 (many flips).
+    ("2016-01-01", "2016-07-01", False, V41, "4.1"),
+    ("2022-07-01", "2023-07-01", False, structure.CoreParams(swing_len=3, **structure.V41_FLIPS), "4.1"),
 ])
-def test_port_matches_pine_source_candle_by_candle(tmp_path, start, end, require_sweep):
+def test_port_matches_pine_source_candle_by_candle(tmp_path, start, end, require_sweep, core, version):
+    if not (WEBSITE / "tradingview" / f"gse_{version}" / "src" / "core.pine").exists():
+        pytest.skip(f"gse-website has no gse_{version}")
     m15 = data.load("M15", start=start, end=end)
-    prep = structure.prepare(m15)
+    prep = structure.prepare(m15, core)
     trace: list = []
     ctx = structure.ContextParams(require_sweep=require_sweep)
-    out, _ = structure.run(m15, ctx=ctx, prep=prep, trace=trace)
-    js = _oracle(m15, prep, tmp_path, require_sweep)
+    out, events = structure.run(m15, core, ctx=ctx, prep=prep, trace=trace)
+    js = _oracle(m15, prep, tmp_path, require_sweep, core, version)
     assert len(js) == len(out) == len(trace)
     zones = 0
     for t, (o, (levels, eqh, eql)) in enumerate(zip(js, trace)):
@@ -96,3 +106,6 @@ def test_port_matches_pine_source_candle_by_candle(tmp_path, start, end, require
         zones += bool(o["long_zone"]) + bool(o["short_zone"])
     if not require_sweep:
         assert zones > 0  # the window exercised the Golden Zone (with Require Sweep on it can be empty)
+    if version == "4.1":  # the window exercised confirmed and failed flips
+        kinds = {e["event"] for e in events}
+        assert {structure.EVT_FLIP_TO_SUP, structure.EVT_FLIP_TO_RES, structure.EVT_FLIP_FAIL_SUP, structure.EVT_FLIP_FAIL_RES} <= kinds
