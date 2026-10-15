@@ -326,6 +326,11 @@ Run in three steps. Each step decides whether the next one is worth running.
   - **No combination passes validation.** The best training SQN (1.33) is far below the luck line (4.4). Of the top 20 on training, 19 lose on 2019–22, and the 20th makes +0.005 R.
   - **Inducement does not help.** Against no inducement, everything else equal, every setting changes the result by at most ±0.06 R per trade, and improves only about half the pairs. "Present" (price runs straight into the level) is slightly worse.
   - **Wider stops lose less** (3 ATR −0.13 R, against 1 ATR −0.32 R on validation), as in O3, S1 and S2. Trailing and fixed targets are about the same.
+- **E1** ([results/E1/report.md](results/E1/report.md)): the edge check from section 8, step 2. First touches against random levels on the same side, at the same distance from price, before costs.
+  - **No edge in any of the 18 cells** (chart × lookback × fresh/flipped). The measure: does price get 1 ATR away from the level before 1 ATR through it?
+  - **Fresh levels behave like random prices** at every lookback. On 15m the difference is within ±0.025.
+  - **Flipped levels on 15m** do slightly better than random in both periods at every lookback (+0.02 to +0.065), but no interval excludes zero.
+  - **Costs are the bigger problem.** One spread plus slippage is about 0.3 ATR on 15m, 0.14 on 1H and 0.07 on 4H. A 1:1 trade with a 1 ATR stop needs about 65% wins on 15m to break even; touches give 43–53%.
 - **O4** ([results/O4/report.md](results/O4/report.md)): the 15m strategy as written, with lookbacks 8/10/12 × H4 6/8/10. All nine lose about −0.9 R after costs and −0.15 to −0.27 R before costs. The v4.1 flip rules change almost nothing against v4.0 (O2).
 
 ---
