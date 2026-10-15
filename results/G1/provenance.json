@@ -1,0 +1,80 @@
+{
+  "git": {
+    "commit": "da46dbbfda604023447058db0405ad46848397f1",
+    "dirty": false
+  },
+  "rules": 4836,
+  "families": [
+    "donchian",
+    "ema_cross",
+    "rsi2",
+    "asian_breakout",
+    "drift",
+    "big_bar",
+    "gse_break",
+    "gse_sweep",
+    "prev_day",
+    "ny_open"
+  ],
+  "exits": {
+    "s1.5_t1.5": [
+      1.5,
+      1.5,
+      0.0,
+      0.0,
+      0,
+      false
+    ],
+    "s2_t3": [
+      2.0,
+      3.0,
+      0.0,
+      0.0,
+      0,
+      false
+    ],
+    "s3_trail3": [
+      3.0,
+      0.0,
+      3.0,
+      0.0,
+      0,
+      false
+    ],
+    "s2_time10": [
+      2.0,
+      0.0,
+      0.0,
+      0.0,
+      10,
+      false
+    ],
+    "family_s3": [
+      3.0,
+      0.0,
+      0.0,
+      0.0,
+      0,
+      true
+    ]
+  },
+  "periods": {
+    "train": [
+      "2016-01-01",
+      "2019-01-01"
+    ],
+    "val": [
+      "2019-01-01",
+      "2023-01-01"
+    ]
+  },
+  "holdout": [
+    "2012-01-01",
+    "2016-01-01"
+  ],
+  "min_train": 50,
+  "min_val": 70,
+  "finalists": 10,
+  "slippage": 0.1,
+  "status": "pre-registered in results/G1/rule.json"
+}
