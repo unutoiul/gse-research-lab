@@ -1,0 +1,59 @@
+# Runs one single-job study on fresh OANDA data and keeps its results folder as an artifact
+# ("<study>-results"); the report is also shown on the run's summary page. Nothing is committed.
+name: study
+run-name: "study ${{ inputs.study }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      study:
+        description: "the study's command"
+        required: true
+        type: choice
+        options: [setups-study, event-study, v41-study]
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      OANDA_API_TOKEN: ${{ secrets.OANDA_API_TOKEN }}
+      OANDA_ENV: ${{ secrets.OANDA_ENV }}
+      PYTHONUNBUFFERED: "1"
+      PYTHONWARNINGS: ignore
+      GSE_WORKERS: "4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Restore market data
+        uses: actions/cache/restore@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+          restore-keys: oanda-m15-
+      - name: Update market data (OANDA, only the missing candles)
+        run: python -m gse_research download
+      - name: Save market data
+        uses: actions/cache/save@v4
+        with:
+          path: data/XAU_USD_M15.parquet
+          key: oanda-m15-${{ github.run_id }}
+      - name: Run ${{ inputs.study }}
+        id: run
+        run: |
+          python -m gse_research ${{ inputs.study }} | tee out.txt
+          echo "report=$(grep -oE 'results[/\\][A-Z0-9]+[/\\]report.md' out.txt | tail -1)" >> "$GITHUB_OUTPUT"
+      - name: Show the report on the summary page
+        run: cat "${{ steps.run.outputs.report }}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.study }}-results
+          path: results/
+          retention-days: 30
