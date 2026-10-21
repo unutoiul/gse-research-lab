@@ -1,0 +1,37 @@
+{
+  "git": {
+    "commit": "3323b484daa68d95803b8db81ca02dad749edc0d",
+    "dirty": false
+  },
+  "dataset_sha256": "cf16b9de4d73463f865dd296a0c74ec189ab4b5ddde59b8e84c2c1605813b5b0",
+  "variants": 32,
+  "setups": [
+    "A_pullback",
+    "B_flip"
+  ],
+  "triggers": [
+    "touch",
+    "rejection",
+    "sweep_reclaim",
+    "bos"
+  ],
+  "stops": [
+    "structural",
+    "structural_floor"
+  ],
+  "targets": [
+    "tp2",
+    "2R"
+  ],
+  "periods": {
+    "train": [
+      "2016-01-01",
+      "2019-01-01"
+    ],
+    "val": [
+      "2019-01-01",
+      "2023-01-01"
+    ]
+  },
+  "status": "PROVISIONAL. The Stage 4 parity gate has not passed: TradingView's pivot tie rule is unverified (`strict` assumed) and the data is OANDA, not the BlackBull feed GSE runs on."
+}
