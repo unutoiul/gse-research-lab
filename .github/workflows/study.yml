@@ -10,7 +10,7 @@ on:
         description: "the study's command"
         required: true
         type: choice
-        options: [setups-study, event-study, v41-study]
+        options: [setups-study, setups-wide, event-study, v41-study]
 
 permissions:
   contents: read

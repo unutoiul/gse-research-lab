@@ -35,6 +35,11 @@ variant per setup (highest SQN with >= 50 trades); validation 2019-2022 judges i
 records its 1H context (confirm / neutral / contradict), the 15m bias, session, volatility regime and
 GSE's confluence checks, so the report measures which of them separate better trades from worse.
 They are reported, never used to pick.
+
+Study S5 (`run_wide_study`) runs the same setups and triggers with wider stops and nearer targets:
+stops 2 / 3 / 5 ATR from the entry, or 1 ATR beyond the structural invalidation; targets 0.25 / 0.5 /
+0.75 / 1 R, or the nearest opposing structure (TP1-like, at least 0.25 R). 160 variants, chosen and
+judged exactly as in S4.
 """
 
 from __future__ import annotations
@@ -62,6 +67,8 @@ LOADS = {"discovery": ("2015-01-01", "2023-01-04")}
 PERIODS = {"train": ("2016-01-01", "2019-01-01"), "val": ("2019-01-01", "2023-01-01")}
 COSTS = ms.COSTS
 MIN_TRADES = 50
+S5_STOPS = ["atr2", "atr3", "atr5", "structural_buf1"]
+S5_TARGETS = ["r0.25", "r0.5", "r0.75", "r1", "near"]
 MC_RUNS, MC_YEARS, MC_SEED = 50, 5000, 20261021
 CHECKS = ["bias", "recent_bos", "room", "sweep_recent", "rejection_recent", "volume", "killzone", "score_75"]
 
@@ -187,13 +194,35 @@ def _setup_name(lstate: int) -> str:
 
 
 def plan(row, stop: str, target: str) -> tuple[float, float]:
-    """Stop and target for one candidate (NaN when the website engine finds no valid target)."""
+    """Stop and target for one candidate (NaN when no valid target exists).
+
+    Stops: "structural" (invalidation + max(tick, 0.2 ATR)), "structural_floor" (that, at least 1 ATR),
+    "atrK" (K ATR from the entry), "structural_bufK" (K ATR beyond the invalidation).
+    Targets: "tp2" (website engine), "2R" / "rX" (X times the risk), "near" (the nearest opposing
+    structure the website engine lists, at least 0.25 R away)."""
     d, entry, inval, atr = row.side, row.entry, row.inval, row.atr
     edge = min(entry, inval) if d == 1 else max(entry, inval)
     struct_stop = st.target_round(edge - d * max(TICK, atr * st.STOP_BUFFER_ATR), TICK, d)
     dist = d * (entry - struct_stop)
     if stop == "structural_floor":
         dist = max(dist, atr)
+    elif stop.startswith("atr"):
+        dist = float(stop[3:]) * atr
+    elif stop.startswith("structural_buf"):
+        dist = d * (entry - (edge - d * float(stop[14:]) * atr))
+    if target.startswith("r") or target == "near":
+        s = st.target_round(entry - d * dist, TICK, d)
+        risk = d * (entry - s)
+        if not risk > 0:
+            return math.nan, math.nan
+        if target == "near":
+            if not isinstance(row.raw, list):
+                return math.nan, math.nan
+            for price, rr, *_ in st.target_candidates(list(row.raw), d, entry, risk, atr, TICK):
+                if rr >= 0.25:
+                    return s, price
+            return math.nan, math.nan
+        return s, st.target_round(entry + d * float(target[1:]) * risk, TICK, d)
     if target == "2R":
         s = st.target_round(entry - d * dist, TICK, d)
         risk = d * (entry - s)
@@ -270,11 +299,12 @@ def label_trades(trades: pd.DataFrame, feat: pd.DataFrame) -> pd.DataFrame:
 
 # ── The study ────────────────────────────────────────────────────────────
 
-def variants() -> list[tuple]:
-    return list(itertools.product(SETUPS, TRIGGERS, STOPS, TARGETS))
+def variants(stops: list | None = None, targets: list | None = None) -> list[tuple]:
+    return list(itertools.product(SETUPS, TRIGGERS, stops or STOPS, targets or TARGETS))
 
 
-def evaluate(load: tuple[str, str], periods: dict) -> tuple[pd.DataFrame, dict, dict]:
+def evaluate(load: tuple[str, str], periods: dict, stops: list | None = None,
+             targets: list | None = None) -> tuple[pd.DataFrame, dict, dict]:
     """Every variant on `periods`; returns the scores, the labelled net trades per variant and the
     arrays the Monte Carlo needs."""
     history = data.load("M15", *load)
@@ -287,7 +317,7 @@ def evaluate(load: tuple[str, str], periods: dict) -> tuple[pd.DataFrame, dict, 
     ref = ctx.loc[train_mask, "atr_pct"] if train_mask.any() else ctx["atr_pct"]
     feat = features(m15, eng, ctx, tuple(np.nanquantile(ref, [1 / 3, 2 / 3])))
     rows, trades = [], {}
-    for v in variants():
+    for v in variants(stops, targets):
         sig = variant_signals(cand, len(m15), *v)
         row = dict(zip(("setup", "trigger", "stop", "target"), v))
         for period, (a, b) in periods.items():
@@ -409,12 +439,26 @@ def monte_carlo(chosen: pd.DataFrame, trades: dict, env: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def run_study(out_dir: Path | None = None) -> Path:
-    scores, trades, env = evaluate(LOADS["discovery"], PERIODS)
+S4_TITLE = "S4 — GSE's two setups, tested separately (1D + 4H trend, 1H context, 15m entry)"
+S4_ABOUT = ("Four entry triggers, two structural stops, two targets: 32 variants, all shown.")
+S5_TITLE = "S5 — GSE's two setups with wider stops and nearer targets"
+S5_ABOUT = ("The S4 setups and triggers with stops of 2 / 3 / 5 ATR from the entry or 1 ATR beyond the structural "
+            "invalidation, and targets of 0.25 / 0.5 / 0.75 / 1 R or the nearest opposing structure (at least 0.25 R): "
+            "160 variants, all shown. A fixed target of X R needs a win rate above 1 / (1 + X) before costs to break "
+            "even (0.25 R: 80%, 0.5 R: 67%, 0.75 R: 57%, 1 R: 50%); costs raise it further.")
+
+
+def run_wide_study(out_dir: Path | None = None) -> Path:
+    return run_study(out_dir, "S5", S5_STOPS, S5_TARGETS, S5_TITLE, S5_ABOUT)
+
+
+def run_study(out_dir: Path | None = None, name: str = "S4", stops: list | None = None, targets: list | None = None,
+              title: str = S4_TITLE, about: str = S4_ABOUT) -> Path:
+    scores, trades, env = evaluate(LOADS["discovery"], PERIODS, stops, targets)
     chosen = select(scores)
     chosen["verdict"] = [verdict(r) for _, r in chosen.iterrows()]
     mc = monte_carlo(chosen, trades, env)
-    out_dir = out_dir or data.ROOT / "results" / "S4"
+    out_dir = out_dir or data.ROOT / "results" / name
     out_dir.mkdir(parents=True, exist_ok=True)
     scores.to_csv(out_dir / "variants.csv", index=False)
     mc.to_csv(out_dir / "monte_carlo.csv", index=False)
@@ -425,23 +469,25 @@ def run_study(out_dir: Path | None = None) -> Path:
             trades[(v, period)].to_csv(out_dir / f"trades_{r['setup']}_{period}.csv", index=False)
     manifest = json.loads(data.MANIFEST.read_text())[data.dataset_path("M15").name]
     prov = {"git": experiments._git(), "dataset_sha256": manifest["sha256"], "variants": len(scores), "setups": list(SETUPS),
-            "triggers": TRIGGERS, "stops": STOPS, "targets": TARGETS, "periods": PERIODS, "status": experiments.PROVISIONAL}
+            "triggers": TRIGGERS, "stops": stops or STOPS, "targets": targets or TARGETS, "periods": PERIODS,
+            "status": experiments.PROVISIONAL}
     (out_dir / "provenance.json").write_text(json.dumps(prov, indent=2, default=str), encoding="utf-8")
-    (out_dir / "report.md").write_text(report(scores, chosen, trades, mc, prov), encoding="utf-8")
+    (out_dir / "report.md").write_text(report(scores, chosen, trades, mc, prov, title, about), encoding="utf-8")
     return out_dir
 
 
-def report(scores: pd.DataFrame, chosen: pd.DataFrame, trades: dict, mc: pd.DataFrame, prov: dict) -> str:
+def report(scores: pd.DataFrame, chosen: pd.DataFrame, trades: dict, mc: pd.DataFrame, prov: dict,
+           title: str = S4_TITLE, about: str = S4_ABOUT) -> str:
     md = experiments._md
     cols = ["setup", "trigger", "stop", "target"]
     show = cols + [f"{p}_{k}" for p in PERIODS for k in ("net_trades", "net_win_rate", "net_expectancy_R", "net_profit_factor",
                                                          "net_max_drawdown_R", "gross_expectancy_R")]
     lines = [
-        "# S4 — GSE's two setups, tested separately (1D + 4H trend, 1H context, 15m entry)", "",
+        f"# {title}", "",
         f"> {prov['status']}", "",
         "Setup A: first touch of a fresh 15m level after a pullback against the 1D + 4H trend. Setup B: first touch "
-        "of a confirmed 15m flipped level, continuing the trend. Four entry triggers, two structural stops, two "
-        "targets: 32 variants, all shown. Train 2016–2018 picks one per setup; validation 2019–2022 judges it. "
+        f"of a confirmed 15m flipped level, continuing the trend. {about} Train 2016–2018 picks one per setup; "
+        "validation 2019–2022 judges it. "
         "OANDA bid/ask + 0.10 slippage (net); gross = mid prices, no slippage. Rules: gse_research/setups.py.", "",
         f"Git `{prov['git']['commit'][:10]}`{' (dirty)' if prov['git']['dirty'] else ''} · dataset `{prov['dataset_sha256'][:12]}…`", "",
         "## Every variant", "", md(scores[show].set_index("setup").round(3)), "",

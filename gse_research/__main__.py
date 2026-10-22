@@ -24,6 +24,8 @@
     python -m gse_research setups-study
         study S4: Setup A (pullback to a fresh level) and Setup B (flip continuation) with the 1D + 4H
         trend, four 15m triggers, structural stops and Monte Carlo checks, written to results/S4/
+    python -m gse_research setups-wide
+        study S5: the S4 setups with wider stops and nearer targets (160 variants), results/S5/
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
@@ -87,6 +89,7 @@ def main() -> None:
     eg.add_argument("--out", type=Path, required=True)
     eg.add_argument("--merge", type=Path, default=None, help="folder with trials_part_*.csv: join, pick finalists, holdout")
     sub.add_parser("setups-study", help="study S4: GSE's two setups, tested separately")
+    sub.add_parser("setups-wide", help="study S5: the S4 setups with wider stops and nearer targets")
     ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
     ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
@@ -155,6 +158,9 @@ def main() -> None:
         else:
             out = edge_search.run_shard(args.shard or 0, args.of, args.out, progress)
         print(f"Written to {out}")
+    elif args.command == "setups-wide":
+        out = setups.run_wide_study()
+        print(f"Report: {out / 'report.md'}")
     elif args.command == "setups-study":
         out = setups.run_study()
         print(f"Report: {out / 'report.md'}")

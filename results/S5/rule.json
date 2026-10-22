@@ -1,0 +1,10 @@
+{
+  "name": "S5",
+  "frozen": "2026-10-22",
+  "requested_by": "owner (chat, 2026-10-22: \"increase the stop loss and decrease the tp1 tp2 and run checks again\")",
+  "grid": "the S4 setups (A pullback, B flip) and triggers (touch, rejection, sweep_reclaim, bos) x stops atr2 / atr3 / atr5 / structural_buf1 x targets r0.25 / r0.5 / r0.75 / r1 / near: 160 variants, fixed before any result",
+  "selection": "per setup, the variant with the highest train (2016-2018) SQN among those with >= 50 train trades",
+  "judgement": "validation 2019-2022: candidate if >= 50 trades, expectancy > 0, profit factor >= 1.2 and the 90% weekly-block bootstrap lower bound > 0 (2-way correction); otherwise watch / rejected / inconclusive",
+  "costs": "OANDA bid/ask, 0.10 slippage, conservative intrabar order",
+  "no_holdout": "2023+ (X1) and 2012-2015 (G1) are spent; a candidate goes to the forward test, not to trading"
+}

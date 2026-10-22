@@ -79,3 +79,15 @@ def test_candidates_do_not_look_ahead():
     n = len(m15[m15["time"] < cut]) - 1
     pd.testing.assert_frame_equal(part[part["bar"] < n].reset_index(drop=True), full[full["bar"] < n].reset_index(drop=True))
     assert set(full["trigger"]) == {"touch", "rejection", "sweep_reclaim", "bos"}
+
+
+def test_wide_stops_and_near_targets():
+    row = pd.Series({"side": 1, "entry": 100.0, "inval": 99.9, "atr": 1.0, "raw": None})
+    row = row.to_frame().T.astype(object).itertuples(index=False).__next__()
+    assert s4.plan(row, "atr3", "r0.5") == (pytest.approx(97.0), pytest.approx(101.5))
+    assert s4.plan(row, "structural_buf1", "r1") == (pytest.approx(98.9), pytest.approx(101.1))
+    assert np.isnan(s4.plan(row, "atr2", "near")[0])               # no structure listed: no target
+    short = pd.Series({"side": -1, "entry": 100.0, "inval": 100.2, "atr": 2.0, "raw": None})
+    short = short.to_frame().T.astype(object).itertuples(index=False).__next__()
+    assert s4.plan(short, "atr5", "r0.25") == (pytest.approx(110.0), pytest.approx(97.5))
+    assert len(s4.variants(s4.S5_STOPS, s4.S5_TARGETS)) == 160
