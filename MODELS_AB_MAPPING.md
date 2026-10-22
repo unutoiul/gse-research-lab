@@ -2,6 +2,8 @@
 
 Date: 2026-10-10 · First deliverable of the two-model specification · Read-only: no Pine or website source was changed.
 
+**Updated 2026-10-22:** section 7 shows what study S4 (`gse_research/setups.py`, `results/S4/`) has since built, which decisions it took, what is still missing, and the results so far.
+
 This maps every step of the two specified models to what **GSE v4.0 actually does**, as verified in `GSE_BASELINE_AUDIT.md`. Each step is marked:
 
 | Mark | Meaning |
@@ -121,3 +123,91 @@ Each is a research hypothesis, not a GSE rule. The proposed default is what woul
 2. **Shared building blocks:** the planned Stage 3 port of `core.pine`, `context.pine` and `f_bias_score`. The bias engine runs on 15M, 1H, 4H and D candles, and HTF values are joined with `data.align` (no look-ahead). R001 needs the same port, so nothing is built twice.
 3. **Model B first.** Its full sequence (break → candidate → retest → confirmed flip) is in `core.pine`, which the port covers. It needs three new definitions (D11–D13). Model A needs four (D5, D6, D8, D10), plus parts of the website setups engine.
 4. **Model A**, then the mandatory-versus-optional comparisons for 1H and sweeps, one change per experiment.
+
+## 7. Status after study S4 (2026-10-22)
+
+Study S4 implemented both models as research code: `gse_research/setups.py` (Model A = "A_pullback", Model B = "B_flip"), with results in `results/S4/report.md`. It runs on GitHub Actions through `study.yml` (input `setups-study`). Model B uses the **v4.1 role-reversal rules** that the live indicator now runs; they are checked against the v4.1 Pine source candle by candle (`tests/test_structure_oracle.py`):
+- a break needs a close at least 0.1 ATR beyond the level;
+- the breaking candle must close in the break direction with a body of at least half its range;
+- the level must have been touched before;
+- price must move 1 ATR away before a retest counts;
+- failed flips are recorded.
+
+The status column below:
+
+| Status | Meaning |
+|---|---|
+| **Built** | S4 implements the step |
+| **Recorded** | S4 measures the condition on every trade and reports results with and without it, but does not require it |
+| **Not built** | still missing |
+
+### Decisions S4 took
+
+| ID | S4's choice | Same as the proposed default? |
+|---|---|---|
+| D1 | A1: trade with the Daily/4H trend, out of the 15M pullback | Yes |
+| D2–D4 | GSE bias score on closed D and 4H candles; trade only when **both agree** (mixed = no trade) | No: the default was "4H decides, Daily must not oppose". S4 took the stricter "both agree" arm. |
+| D5 | **No pullback requirement.** The 15M bias at the signal is recorded (with trend / neutral / against) | No. The default (15M structure against the trend) is not built as a filter |
+| D6, D7 | First visit of a fresh, untouched level not in contact, on the trend side. The limit entry takes the nearest one; market triggers take any touched one. No distance cap | Yes |
+| D8 | Both recorded: GSE qualified sweep within 8 bars (a check), and a sweep of the level itself (the sweep_reclaim trigger) | Yes |
+| D9 | 1H bias recorded as confirm / neutral / contradict, never required | Partly: recorded, but no mandatory arm |
+| D10 | Four triggers, each a separate variant: resting limit at the level, rejection candle on the touch (wick ≥ 50%, directional), sweep-and-reclaim within 8 bars, a close beyond the extreme since the touch from bar 2 to 16 (micro break of structure) | Yes, widened |
+| D11 | v4.1 decisive break. The direction is implied: the trade side (the level's new role) must match the trend | Yes, with v4.1's break rule |
+| D12 | **The first visit after the confirming retest**, not the confirming retest itself (the indicator's "Flipped … touched" alert) | No: the default was the confirming retest |
+| D13 | 15M bias recorded, not required | Partly |
+| D14 | Resting limit at the level, or the next open after the trigger close | Yes |
+| D15 | Wick and every extreme since the touch, ± max(tick, 0.2 ATR); a second arm with a 1 ATR minimum stop | Yes, plus the floor arm |
+| D16 | Website TP2, or a fixed 2R; no time exit; no candidate when TP2 finds no valid target | Yes (fixed 2R replaces the first-obstacle arm) |
+
+### Steps, model by model
+
+| Step | Model A | Model B |
+|---|---|---|
+| 1. Daily/4H trend | Built (both agree) | Built (both agree) |
+| 2. A: 15M pullback / B: 15M SNR level | **Recorded only** (15M bias), not a filter | Built |
+| 3. A: fresh level in the path / B: break in the trend direction | Built | Built (v4.1 decisive break; direction implied by the trade side) |
+| 4. A: interaction and sweep / B: role transition | Built (first touch); sweep recorded and used as a trigger | Built (v4.1 candidate → confirmed flip) |
+| 5. A: 1H context / B: retest of the flipped level | Recorded | Built (first visit after confirmation) |
+| 6. A: 15M reversal trigger / B: 1H and 15M continuation | Built (four triggers) | 1H and 15M recorded; the four triggers also apply |
+| 7. Candidate only when conditions are met | Built: one variant per trigger, stop and target | Built |
+| 8. Invalidation, entry, target | Built | Built |
+
+### Research requirements
+
+| Requirement | Status |
+|---|---|
+| Models separate in code, logs and reports | **Partly.** One module, separate setups, trade logs (`trades_A_pullback_*.csv`, `trades_B_flip_*.csv`) and report sections |
+| Ambiguous definitions as configurable hypotheses | Built for triggers, stops and targets (32 variants). The trend and pullback definitions are fixed constants, not yet switchable |
+| Mandatory versus optional 1H confirmation and sweeps | **Partly.** The report compares trades with and without each condition. There is no separately run "mandatory" arm, and no arm selection on it |
+| Log every rejected candidate with its reason | **Not built.** Only accepted trades are logged |
+| Frequency, expectancy, PF, drawdown, MAE/MFE, out-of-sample stability | Built for frequency, expectancy, PF, drawdown and the year-by-year split. MAE/MFE are in the trade logs (`mfe_R`, `mae_R`) but not summarised in the report. Monte Carlo is added: random entries with the same stops and targets, and trade resampling |
+| Spread, slippage, execution | Built: OANDA bid/ask, 0.10 slippage, conservative intrabar order, one position at a time |
+| Never change the live Pine Script | Respected |
+| No profitability claim without reproducible tests | Respected: provenance (git commit, dataset hash) in every result |
+
+### Results so far
+
+Neither model passes validation (2019–2022), whichever trigger, stop or target is used:
+- **Model B** (limit at the flipped level, 1 ATR minimum stop, 2R): −0.31 R per trade on 49 trades.
+- **Model A** (sweep-and-reclaim, 1 ATR minimum stop, TP2): −0.56 R on 65 trades.
+- All 32 variants lose after costs on validation.
+- **Random entries do as well.** Random entries with the same stops and targets match or beat the models' entries in 40% (B) and 80% (A) of Monte Carlo runs.
+- **The recorded conditions change sign between periods.** The 1H context, the 15M bias, the session and GSE's confluence checks all help in one period and hurt in the other.
+
+This agrees with study E1: first touches of fresh and flipped levels turn away from price no more often than random levels do, before any costs.
+
+### What is left before the specification is fully covered
+
+| # | Missing piece | Size |
+|---|---|---|
+| 1 | Model A's pullback as a filter (D5): 15M structure against the trend, or a k × ATR retracement | Small: one switch |
+| 2 | "Daily must not oppose" (the D4 default) as an arm beside "both agree" | Small |
+| 3 | Mandatory 1H and mandatory sweep arms, run and judged like the other variants | Small |
+| 4 | Model B entered on the confirming retest itself (the D12 default) | Small |
+| 5 | Rejected-candidate log: every touch on the trend side, with the first failing step and every failing step | Medium |
+| 6 | MAE/MFE summary per model and variant in the report | Small |
+| 7 | Separate `model_a` / `model_b` modules, configs and reports | Medium, no change to results |
+
+Two limits apply to all of it:
+- **No untouched data is left for a final test.** 2023+ was used for X1, and 2012–2015 for G1. Anything chosen from these additions can only be judged on new data: the F1-style forward test, or the owner's decision to reuse 2023–2026.
+- **Items 1–4 add trials.** Each one adds more chances for a lucky result, so they should be fixed in advance and counted.
