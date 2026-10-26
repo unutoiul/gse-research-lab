@@ -1,0 +1,4 @@
+setup,trigger,stop,target,closed_trades,open,win_rate,avg_R,total_R,profit_factor,max_drawdown_R,gross_avg_R,ci_low,verdict
+A_pullback,touch,atr5,r0.5,0,0,,,0.0,,0.0,,,running
+A_pullback,touch,atr5,r1,0,0,,,0.0,,0.0,,,running
+B_flip,touch,atr2,r0.75,0,0,,,0.0,,0.0,,,running

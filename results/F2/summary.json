@@ -1,0 +1,58 @@
+{
+  "data_end": "2026-10-26 11:30:00+00:00",
+  "forward_start": "2026-10-23",
+  "git": {
+    "commit": "b8925a641528ce592b7286c03c55445c2c9470ad",
+    "dirty": false
+  },
+  "rows": [
+    {
+      "setup": "A_pullback",
+      "trigger": "touch",
+      "stop": "atr5",
+      "target": "r0.5",
+      "closed_trades": 0,
+      "open": 0,
+      "win_rate": NaN,
+      "avg_R": NaN,
+      "total_R": 0.0,
+      "profit_factor": NaN,
+      "max_drawdown_R": 0.0,
+      "gross_avg_R": NaN,
+      "ci_low": NaN,
+      "verdict": "running"
+    },
+    {
+      "setup": "A_pullback",
+      "trigger": "touch",
+      "stop": "atr5",
+      "target": "r1",
+      "closed_trades": 0,
+      "open": 0,
+      "win_rate": NaN,
+      "avg_R": NaN,
+      "total_R": 0.0,
+      "profit_factor": NaN,
+      "max_drawdown_R": 0.0,
+      "gross_avg_R": NaN,
+      "ci_low": NaN,
+      "verdict": "running"
+    },
+    {
+      "setup": "B_flip",
+      "trigger": "touch",
+      "stop": "atr2",
+      "target": "r0.75",
+      "closed_trades": 0,
+      "open": 0,
+      "win_rate": NaN,
+      "avg_R": NaN,
+      "total_R": 0.0,
+      "profit_factor": NaN,
+      "max_drawdown_R": 0.0,
+      "gross_avg_R": NaN,
+      "ci_low": NaN,
+      "verdict": "running"
+    }
+  ]
+}
