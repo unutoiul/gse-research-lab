@@ -1,0 +1,21 @@
+{
+  "name": "F2",
+  "frozen": "2026-10-26",
+  "requested_by": "owner (chat, 2026-10-26: \"can we continue than\", answering whether to add the best S5 settings to the forward test)",
+  "source": "results/S5/report.md: none of the 160 settings was profitable on 2019-2022; these three came closest or were picked by the training data. No candle on or after the forward start was read for these settings before this file was committed.",
+  "forward_start": "2026-10-23",
+  "variants": [
+    ["A_pullback", "touch", "atr5", "r0.5"],
+    ["A_pullback", "touch", "atr5", "r1"],
+    ["B_flip", "touch", "atr2", "r0.75"]
+  ],
+  "rules": "gse_research/setups.py at this commit: 1D + 4H GSE bias both agreeing as the trend, GSE v4.1 levels (lookback 10), first touch with a resting limit at the level, stop K ATR from the entry, target X times the risk",
+  "costs": "OANDA bid/ask candles, 0.10 slippage on stops and market exits, conservative intrabar order, one position at a time per setting",
+  "criteria": {
+    "running": "fewer than 100 closed trades for the setting",
+    "fail": "net expectancy <= 0",
+    "pass": "net expectancy > 0, profit factor >= 1.2 and 90% weekly-block bootstrap lower bound > 0",
+    "weak": "positive but short of a pass criterion"
+  },
+  "note": "At S5's rates (about 25-30 trades a year for A, 12-17 for B) a verdict takes roughly 3-8 years. Interim reports are tallies, not evidence; nothing here should be traded with real money before a pass."
+}

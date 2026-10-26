@@ -26,6 +26,8 @@
         trend, four 15m triggers, structural stops and Monte Carlo checks, written to results/S4/
     python -m gse_research setups-wide
         study S5: the S4 setups with wider stops and nearer targets (160 variants), results/S5/
+    python -m gse_research forward-setups [--out DIR]
+        forward test F2: paper trades of the best S5 settings since 2026-10-23, results/F2/
     python -m gse_research msnr-search [--study S1|S2] [--workers N]
         study S1: Malaysian SnR with confluences (10,368 combinations), written to results/S1/;
         study S2: the same with short fixed targets and long fixed stops (41,472), results/S2/
@@ -55,7 +57,7 @@ import json
 
 import pandas as pd
 
-from . import data, edge_search, event_study, experiments, forward, setups, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
+from . import data, edge_search, event_study, experiments, forward, forward_setups, setups, locked_test, msnr_search, optimize, quality, strategy_study, timeframes, touch_search, worker
 
 
 def main() -> None:
@@ -90,6 +92,8 @@ def main() -> None:
     eg.add_argument("--merge", type=Path, default=None, help="folder with trials_part_*.csv: join, pick finalists, holdout")
     sub.add_parser("setups-study", help="study S4: GSE's two setups, tested separately")
     sub.add_parser("setups-wide", help="study S5: the S4 setups with wider stops and nearer targets")
+    f2 = sub.add_parser("forward-setups", help="forward test F2: paper trades of the best S5 settings")
+    f2.add_argument("--out", type=Path, default=None)
     ms = sub.add_parser("msnr-search", help="study S1 / S2: Malaysian SnR with confluences")
     ms.add_argument("--study", choices=sorted(msnr_search.STUDIES), default="S1")
     ms.add_argument("--workers", type=int, default=None)
@@ -163,6 +167,9 @@ def main() -> None:
         print(f"Report: {out / 'report.md'}")
     elif args.command == "setups-study":
         out = setups.run_study()
+        print(f"Report: {out / 'report.md'}")
+    elif args.command == "forward-setups":
+        out = forward_setups.run(args.out)
         print(f"Report: {out / 'report.md'}")
     elif args.command == "msnr-search":
         out = msnr_search.run_search(args.workers, progress=lambda f, m: print(f"{f:5.0%} {m}", flush=True), study=args.study)

@@ -1,6 +1,8 @@
-# Forward test F1 (gse_research/forward.py, results/F1/rule.json): every Monday, flipped-level
-# touches since 2026-10-13 against random levels, on fresh OANDA data. The report is shown on the
-# run's summary page and kept as the "f1-report" artifact. Nothing is committed or written to a database.
+# Forward tests, every Monday on fresh OANDA data:
+# F1 (gse_research/forward.py, results/F1/rule.json): flipped-level touches since 2026-10-13 against random levels;
+# F2 (gse_research/forward_setups.py, results/F2/rule.json): paper trades of the best S5 settings since 2026-10-23.
+# The reports are shown on the run's summary page and kept as the "f1-report" and "f2-report"
+# artifacts. Nothing is committed or written to a database.
 name: forward-test
 run-name: "forward test F1"
 
@@ -49,4 +51,13 @@ jobs:
         with:
           name: f1-report
           path: out/F1/
+          retention-days: 90
+      - name: Forward test F2
+        run: python -m gse_research forward-setups --out out/F2
+      - name: Show the F2 report on the summary page
+        run: cat out/F2/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: f2-report
+          path: out/F2/
           retention-days: 90
