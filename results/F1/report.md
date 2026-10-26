@@ -1,12 +1,12 @@
 # F1 — Forward test: flipped-level touches against random levels
 
-Candles from **2026-10-13** to **2026-10-15 11:45:00+00:00** (OANDA M15). Frozen rule: `results/F1/rule.json`. Primary: 15m, lookback 10, flipped levels; the verdict waits for 400 resolved touches.
+Candles from **2026-10-13** to **2026-10-26 07:30:00+00:00** (OANDA M15). Frozen rule: `results/F1/rule.json`. Primary: 15m, lookback 10, flipped levels; the verdict waits for 400 resolved touches.
 
-Git `aac081a683`
+Git `2b14df381f`
 
 ## Verdict: running
 
-2 of 400 resolved primary touches: a running tally, not evidence yet.
+5 of 400 resolved primary touches: a running tally, not evidence yet.
 
 ## Running tally
 
@@ -14,13 +14,13 @@ win = 1 ATR away from the level before 1 ATR through it, within 32 candles; rand
 
 | chart_tf | swing_len | type | touches | resolved | pending | win_real | win_random | win_diff | win_diff_low | win_diff_high | ret16_diff | cost_atr |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 15m | 10 | fresh | 5 | 4 | 1 | 0.500 | 0.286 | 0.214 | 0.214 | 0.214 | 5.219 | 0.114 |
-| 15m | 10 | flipped | 2 | 2 | 0 | 0.000 | 0.600 | -0.600 | -0.600 | -0.600 | -1.227 | 0.120 |
-| 15m | 3 | fresh | 8 | 7 | 1 | 0.429 | 0.476 | -0.048 | -0.048 | -0.048 | 2.942 | 0.104 |
-| 15m | 3 | flipped | 3 | 3 | 0 | 0.667 | 0.500 | 0.167 | 0.167 | 0.167 | -4.893 | 0.120 |
-| 15m | 5 | fresh | 7 | 6 | 1 | 0.500 | 0.368 | 0.132 | 0.132 | 0.132 | 2.079 | 0.101 |
-| 15m | 5 | flipped | 3 | 3 | 0 | 0.333 | 0.625 | -0.292 | -0.292 | -0.292 | -4.996 | 0.120 |
-| 1H | 10 | fresh | 2 | 0 | 2 | – | 0.000 | – | – | – | – | 0.072 |
+| 15m | 10 | fresh | 17 | 17 | 0 | 0.529 | 0.549 | -0.020 | -0.211 | 0.167 | 1.296 | 0.097 |
+| 15m | 10 | flipped | 6 | 5 | 1 | 0.200 | 0.765 | -0.565 | -0.565 | 0.091 | -1.562 | 0.120 |
+| 15m | 3 | fresh | 46 | 43 | 3 | 0.488 | 0.614 | -0.125 | -0.148 | -0.107 | 0.103 | 0.099 |
+| 15m | 3 | flipped | 12 | 9 | 3 | 0.667 | 0.594 | 0.073 | -0.100 | 0.333 | -1.366 | 0.104 |
+| 15m | 5 | fresh | 30 | 29 | 1 | 0.552 | 0.540 | 0.011 | -0.043 | 0.100 | 0.899 | 0.097 |
+| 15m | 5 | flipped | 10 | 7 | 3 | 0.429 | 0.655 | -0.227 | -0.488 | 0.385 | -2.678 | 0.108 |
+| 1H | 10 | fresh | 5 | 4 | 1 | 0.750 | 0.583 | 0.167 | 0.036 | 0.167 | 2.242 | 0.048 |
 
 ## For comparison: E1 (2016–2022), 15m lookback 10 flipped
 
